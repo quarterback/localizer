@@ -32,12 +32,20 @@ class PortlandScraper(BaseScraper):
         # Portland.gov uses Drupal; solicitation listings are typically in views or tables
         rfps.extend(self._parse_portland_gov(page, resp.text))
 
-        # Also try Ariba Discovery page
+        # Also try Ariba Discovery page (JS-rendered)
         try:
-            ariba_resp = self.fetch(ARIBA_URL)
-            rfps.extend(self._parse_ariba(ariba_resp.text))
+            ariba_html = self.fetch_with_js(
+                ARIBA_URL,
+                wait_selector="table, .posting, .search-result, [class*='posting']",
+            )
+            rfps.extend(self._parse_ariba(ariba_html))
         except Exception as e:
-            logger.warning(f"[portland] Ariba fetch failed (may need JS): {e}")
+            logger.warning(f"[portland] Ariba JS fetch failed, trying static: {e}")
+            try:
+                ariba_resp = self.fetch(ARIBA_URL)
+                rfps.extend(self._parse_ariba(ariba_resp.text))
+            except Exception as e2:
+                logger.warning(f"[portland] Ariba static fetch also failed: {e2}")
 
         return rfps
 

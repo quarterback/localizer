@@ -21,12 +21,20 @@ class MetroScraper(BaseScraper):
     def scrape(self) -> list[RFP]:
         rfps = []
 
-        # Try Bid Locker first
+        # Bid Locker is JS-rendered, use Playwright with static fallback
         try:
-            resp = self.fetch(BIDLOCKER_URL)
-            rfps.extend(self._parse_bidlocker(resp.text))
+            html = self.fetch_with_js(
+                BIDLOCKER_URL,
+                wait_selector="table, .bid-item, [class*='bid'], [class*='solicitation']",
+            )
+            rfps.extend(self._parse_bidlocker(html))
         except Exception as e:
-            logger.warning(f"[metro] Bid Locker fetch failed (may need JS): {e}")
+            logger.warning(f"[metro] Bid Locker JS fetch failed, trying static: {e}")
+            try:
+                resp = self.fetch(BIDLOCKER_URL)
+                rfps.extend(self._parse_bidlocker(resp.text))
+            except Exception as e2:
+                logger.warning(f"[metro] Bid Locker static also failed: {e2}")
 
         # Also scrape Metro's own contract opportunities page
         try:

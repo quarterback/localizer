@@ -161,3 +161,58 @@ class TestDigest:
         assert text == ""
         assert html == ""
         assert rfps == []
+
+
+class TestEmail:
+    def test_get_email_config_defaults(self):
+        from localizer.email import get_email_config
+
+        config = get_email_config()
+        assert config["smtp_host"] == "smtp.gmail.com"
+        assert config["smtp_port"] == 587
+
+    def test_send_fails_without_config(self):
+        from localizer.email import send_digest_email
+
+        result = send_digest_email("text", "<html>html</html>", config={
+            "smtp_host": "smtp.gmail.com",
+            "smtp_port": 587,
+            "smtp_user": "",
+            "smtp_pass": "",
+            "email_to": "",
+            "email_from": "",
+        })
+        assert result is False
+
+    def test_send_builds_correct_message(self):
+        """Verify the MIME message is constructed correctly without actually sending."""
+        from email.mime.multipart import MIMEMultipart
+        from email.mime.text import MIMEText
+        from unittest.mock import patch, MagicMock
+        from localizer.email import send_digest_email
+
+        config = {
+            "smtp_host": "smtp.example.com",
+            "smtp_port": 587,
+            "smtp_user": "user@example.com",
+            "smtp_pass": "pass",
+            "email_to": "recipient@example.com",
+            "email_from": "sender@example.com",
+        }
+
+        mock_smtp = MagicMock()
+        with patch("localizer.email.smtplib.SMTP", return_value=mock_smtp):
+            mock_smtp.__enter__ = MagicMock(return_value=mock_smtp)
+            mock_smtp.__exit__ = MagicMock(return_value=False)
+            result = send_digest_email(
+                "text body", "<html>html body</html>",
+                subject="Test Subject", config=config,
+            )
+
+        assert result is True
+        mock_smtp.starttls.assert_called_once()
+        mock_smtp.login.assert_called_once_with("user@example.com", "pass")
+        mock_smtp.sendmail.assert_called_once()
+        call_args = mock_smtp.sendmail.call_args
+        assert call_args[0][0] == "sender@example.com"
+        assert call_args[0][1] == ["recipient@example.com"]

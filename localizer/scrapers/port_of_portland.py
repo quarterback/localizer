@@ -18,12 +18,20 @@ class PortOfPortlandScraper(BaseScraper):
     def scrape(self) -> list[RFP]:
         rfps = []
 
-        # PlanetBids portal - may render via JS, try static first
+        # PlanetBids is JS-rendered, use Playwright with static fallback
         try:
-            resp = self.fetch(PLANETBIDS_URL)
-            rfps.extend(self._parse_planetbids(resp.text))
+            html = self.fetch_with_js(
+                PLANETBIDS_URL,
+                wait_selector="table, .bid-opportunity, [class*='opportunity']",
+            )
+            rfps.extend(self._parse_planetbids(html))
         except Exception as e:
-            logger.warning(f"[port] PlanetBids fetch failed (may need JS): {e}")
+            logger.warning(f"[port] PlanetBids JS fetch failed, trying static: {e}")
+            try:
+                resp = self.fetch(PLANETBIDS_URL)
+                rfps.extend(self._parse_planetbids(resp.text))
+            except Exception as e2:
+                logger.warning(f"[port] PlanetBids static also failed: {e2}")
 
         # Also try the Port of Portland vendor page
         try:

@@ -153,22 +153,34 @@ def history(ctx, limit):
 
 
 @main.command()
+@click.option("--email", "send_email", is_flag=True, help="Send digest via email")
+@click.option("--no-mark", is_flag=True, help="Don't mark RFPs as notified")
 @click.pass_context
-def digest(ctx):
-    """Show unnotified RFPs as a digest and mark them as notified."""
+def digest(ctx, send_email, no_mark):
+    """Show unnotified RFPs as a digest, optionally send via email."""
+    from localizer.digest import generate_digest
+
     db = ctx.obj["db"]
-    rfps = db.get_unnotified_rfps()
+    text, html, rfps = generate_digest(db, mark_notified=not no_mark)
 
     if not rfps:
-        console.print("[yellow]No new RFPs to report.[/yellow]")
+        console.print("[yellow]No new solicitations to report.[/yellow]")
         return
 
-    console.print(f"[bold green]RFP Digest: {len(rfps)} new opportunity(ies)[/bold green]\n")
+    console.print(f"[bold green]Digest: {len(rfps)} new opportunity(ies)[/bold green]\n")
     _print_rfp_table(rfps)
 
-    # Mark as notified
-    db.mark_notified([r["id"] for r in rfps])
-    console.print(f"\n[dim]Marked {len(rfps)} RFPs as notified.[/dim]")
+    if send_email:
+        from localizer.email import send_digest_email
+        count = len(rfps)
+        subject = f"Localizer: {count} new procurement opportunit{'y' if count == 1 else 'ies'}"
+        if send_digest_email(text, html, subject=subject):
+            console.print("[green]Email sent successfully.[/green]")
+        else:
+            console.print("[red]Email delivery failed. Check LOCALIZER_SMTP_* env vars.[/red]")
+
+    if not no_mark:
+        console.print(f"[dim]Marked {len(rfps)} solicitations as notified.[/dim]")
 
 
 @main.command()

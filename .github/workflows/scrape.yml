@@ -13,6 +13,14 @@ permissions:
 jobs:
   scrape:
     runs-on: ubuntu-latest
+    env:
+      LOCALIZER_SMTP_HOST: ${{ secrets.LOCALIZER_SMTP_HOST }}
+      LOCALIZER_SMTP_PORT: ${{ secrets.LOCALIZER_SMTP_PORT }}
+      LOCALIZER_SMTP_USER: ${{ secrets.LOCALIZER_SMTP_USER }}
+      LOCALIZER_SMTP_PASS: ${{ secrets.LOCALIZER_SMTP_PASS }}
+      LOCALIZER_EMAIL_TO: ${{ secrets.LOCALIZER_EMAIL_TO }}
+      LOCALIZER_EMAIL_FROM: ${{ secrets.LOCALIZER_EMAIL_FROM }}
+
     steps:
       - uses: actions/checkout@v4
 
@@ -23,6 +31,9 @@ jobs:
 
       - name: Install dependencies
         run: pip install -e .
+
+      - name: Install Playwright browsers
+        run: playwright install --with-deps chromium
 
       - name: Download previous database
         uses: actions/cache@v4
@@ -37,11 +48,11 @@ jobs:
           mkdir -p data
           localizer --db data/rfps.db scrape 2>&1 | tee data/scrape.log
 
-      - name: Generate digest
+      - name: Generate and email digest
         run: |
-          localizer --db data/rfps.db new --days 1 > data/latest-digest.txt 2>&1 || true
+          localizer --db data/rfps.db digest --email 2>&1 | tee data/latest-digest.txt
           echo "---"
-          cat data/latest-digest.txt
+          localizer --db data/rfps.db new --days 1 >> data/latest-digest.txt 2>&1 || true
 
       - name: Show scrape history
         run: localizer --db data/rfps.db history

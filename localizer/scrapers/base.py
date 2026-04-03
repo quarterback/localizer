@@ -45,8 +45,12 @@ class BaseScraper(ABC):
     name: str = "base"
     base_url: str = ""
 
+    # Subclasses that need JS rendering should set this to True
+    needs_js: bool = False
+
     def __init__(self, db: Database, timeout: float = 30.0):
         self.db = db
+        self.timeout = timeout
         self.client = httpx.Client(
             timeout=timeout,
             headers={
@@ -54,6 +58,8 @@ class BaseScraper(ABC):
             },
             follow_redirects=True,
         )
+        self._browser = None
+        self._playwright = None
 
     def make_id(self, *parts: str) -> str:
         """Create a deterministic ID from source name + unique parts."""
@@ -125,8 +131,50 @@ class BaseScraper(ABC):
             self.db.log_scrape(self.name, "error", error=str(e), started_at=started)
             raise
 
+    def fetch_with_js(self, url: str, wait_selector: str | None = None,
+                      wait_ms: int = 3000) -> str:
+        """Fetch a page using Playwright for JS-rendered content.
+
+        Args:
+            url: URL to load
+            wait_selector: Optional CSS selector to wait for before extracting HTML
+            wait_ms: Milliseconds to wait after load if no selector given
+
+        Returns:
+            Fully rendered HTML string.
+        """
+        if self._browser is None:
+            from playwright.sync_api import sync_playwright
+            self._playwright = sync_playwright().start()
+            self._browser = self._playwright.chromium.launch(headless=True)
+
+        page = self._browser.new_page()
+        try:
+            logger.debug(f"[{self.name}] Playwright GET {url}")
+            page.goto(url, timeout=int(self.timeout * 1000), wait_until="networkidle")
+            if wait_selector:
+                page.wait_for_selector(wait_selector, timeout=int(self.timeout * 1000))
+            else:
+                page.wait_for_timeout(wait_ms)
+            return page.content()
+        finally:
+            page.close()
+
+    def fetch_rendered(self, url: str, wait_selector: str | None = None) -> str:
+        """Fetch a URL, using Playwright if needs_js is True, otherwise static HTTP.
+
+        Returns HTML string.
+        """
+        if self.needs_js:
+            return self.fetch_with_js(url, wait_selector=wait_selector)
+        return self.fetch(url).text
+
     def close(self):
         self.client.close()
+        if self._browser:
+            self._browser.close()
+        if self._playwright:
+            self._playwright.stop()
 
     def parse_date(self, text: Optional[str]) -> Optional[str]:
         """Try to parse a date string into ISO format."""
