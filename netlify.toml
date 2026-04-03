@@ -1,0 +1,8 @@
+[build]
+  publish = "dist"
+  # No build command needed - the dist/ directory is pre-built by GitHub Actions
+  # and committed to the repo.
+  command = "echo 'Serving pre-built dashboard from dist/'"
+
+# If you want Netlify to build fresh (requires Python):
+# command = "pip install -e . && localizer --db data/rfps.db build --output dist"

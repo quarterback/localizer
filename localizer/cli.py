@@ -207,6 +207,20 @@ def sources(ctx):
     console.print(table)
 
 
+@main.command()
+@click.option("--output", "-o", default="dist", help="Output directory for static site")
+@click.pass_context
+def build(ctx, output):
+    """Generate static HTML dashboard for Netlify/web hosting."""
+    from localizer.dashboard import generate_site
+
+    db = ctx.obj["db"]
+    out = Path(output)
+    count = generate_site(db, out)
+    console.print(f"[green]Dashboard built in {out}/ with {count} opportunities[/green]")
+    console.print(f"[dim]Deploy {out}/ to Netlify, GitHub Pages, or any static host.[/dim]")
+
+
 def _print_rfp_table(rfps: list[dict]):
     table = Table(show_lines=True)
     table.add_column("Source", style="cyan", width=12)
