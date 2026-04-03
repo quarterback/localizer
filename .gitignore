@@ -1,0 +1,11 @@
+__pycache__/
+*.pyc
+*.egg-info/
+dist/
+build/
+.pytest_cache/
+.localizer/
+
+# Ignore local DBs but allow data/ directory (used by GitHub Actions)
+*.db
+!data/rfps.db
