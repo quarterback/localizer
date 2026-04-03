@@ -1,0 +1,258 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Localizer &mdash; Portland Procurement Monitor</title>
+<style>
+:root {
+    --bg: #0f172a; --surface: #1e293b; --surface2: #334155;
+    --text: #e2e8f0; --text-dim: #94a3b8; --accent: #38bdf8;
+    --green: #34d399; --red: #f87171; --yellow: #fbbf24;
+    --border: #475569;
+}
+* { margin: 0; padding: 0; box-sizing: border-box; }
+body {
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif;
+    background: var(--bg); color: var(--text);
+    line-height: 1.5; padding: 0;
+}
+.container { max-width: 1200px; margin: 0 auto; padding: 20px; }
+header {
+    background: var(--surface); border-bottom: 1px solid var(--border);
+    padding: 20px 0; margin-bottom: 24px;
+}
+header .container { display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 12px; }
+h1 { font-size: 1.5rem; font-weight: 700; }
+h1 span { color: var(--accent); }
+.updated { color: var(--text-dim); font-size: 0.85rem; }
+.stats { display: flex; gap: 16px; flex-wrap: wrap; margin-bottom: 20px; }
+.stat {
+    background: var(--surface); border-radius: 8px; padding: 16px 20px;
+    flex: 1; min-width: 140px;
+}
+.stat-value { font-size: 2rem; font-weight: 700; color: var(--accent); }
+.stat-label { color: var(--text-dim); font-size: 0.85rem; }
+.filters {
+    display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 20px; align-items: center;
+}
+.search-box {
+    background: var(--surface); border: 1px solid var(--border); color: var(--text);
+    padding: 8px 14px; border-radius: 6px; font-size: 0.9rem; width: 260px;
+}
+.search-box::placeholder { color: var(--text-dim); }
+.pill {
+    display: inline-block; padding: 4px 12px; border-radius: 20px;
+    font-size: 0.8rem; cursor: pointer; color: white;
+    background: var(--surface2); transition: opacity 0.15s;
+    user-select: none;
+}
+.pill:hover { opacity: 0.85; }
+.pill.active { box-shadow: 0 0 0 2px var(--accent); }
+.pill strong { margin-left: 4px; }
+.source-pill { background: var(--surface2); }
+.card {
+    background: var(--surface); border-radius: 8px; padding: 20px;
+    margin-bottom: 20px; border: 1px solid var(--border);
+}
+.card h2 { font-size: 1.1rem; margin-bottom: 12px; color: var(--text-dim); }
+.deadline-card { border-left: 3px solid var(--yellow); }
+.deadline-item {
+    display: flex; align-items: center; gap: 12px; padding: 6px 0;
+    border-bottom: 1px solid var(--border);
+}
+.deadline-item:last-child { border-bottom: none; }
+.deadline-days {
+    background: var(--yellow); color: #000; font-weight: 700; font-size: 0.8rem;
+    padding: 2px 8px; border-radius: 4px; min-width: 48px; text-align: center;
+}
+.deadline-days.urgent { background: var(--red); color: white; }
+.deadline-title { flex: 1; font-weight: 500; }
+.deadline-source { color: var(--text-dim); font-size: 0.85rem; }
+table { width: 100%; border-collapse: collapse; }
+th {
+    text-align: left; padding: 10px 12px; font-size: 0.8rem; font-weight: 600;
+    color: var(--text-dim); text-transform: uppercase; letter-spacing: 0.05em;
+    border-bottom: 2px solid var(--border); position: sticky; top: 0;
+    background: var(--surface); cursor: pointer;
+}
+th:hover { color: var(--accent); }
+td { padding: 10px 12px; border-bottom: 1px solid var(--border); font-size: 0.9rem; vertical-align: top; }
+tr.rfp-row:hover { background: var(--surface2); }
+tr.rfp-row.is-new { border-left: 3px solid var(--green); }
+.rfp-title { font-weight: 500; }
+.rfp-title a { color: var(--accent); text-decoration: none; }
+.rfp-title a:hover { text-decoration: underline; }
+.type-badge {
+    display: inline-block; padding: 2px 8px; border-radius: 4px;
+    font-size: 0.75rem; font-weight: 700; color: white;
+}
+.new-badge {
+    display: inline-block; background: var(--green); color: #000;
+    padding: 1px 6px; border-radius: 3px; font-size: 0.7rem; font-weight: 700;
+    margin-left: 6px;
+}
+.due-date { white-space: nowrap; }
+.due-date.overdue { color: var(--red); text-decoration: line-through; }
+.due-date.soon { color: var(--red); font-weight: 700; }
+.due-date.upcoming { color: var(--yellow); }
+.dim { color: var(--text-dim); }
+.status-success { color: var(--green); }
+.status-error { color: var(--red); }
+.history-table { margin-top: 24px; }
+.history-table table { font-size: 0.85rem; }
+.empty-state {
+    text-align: center; padding: 60px 20px; color: var(--text-dim);
+}
+.empty-state h2 { font-size: 1.3rem; margin-bottom: 8px; }
+#rfp-count { color: var(--text-dim); font-size: 0.85rem; margin-bottom: 8px; }
+@media (max-width: 768px) {
+    .container { padding: 12px; }
+    .stats { gap: 8px; }
+    .stat { min-width: 100px; padding: 12px; }
+    .stat-value { font-size: 1.5rem; }
+    .search-box { width: 100%; }
+    th, td { padding: 8px 6px; font-size: 0.8rem; }
+    .hide-mobile { display: none; }
+}
+</style>
+</head>
+<body>
+<header>
+    <div class="container">
+        <h1><span>Localizer</span> Portland Procurement Monitor</h1>
+        <div class="updated">Updated April 03, 2026 at 23:17 UTC</div>
+    </div>
+</header>
+
+<div class="container">
+    <div class="stats">
+        <div class="stat">
+            <div class="stat-value">64</div>
+            <div class="stat-label">Open Opportunities</div>
+        </div>
+        <div class="stat">
+            <div class="stat-value" style="color: var(--green)">64</div>
+            <div class="stat-label">New This Week</div>
+        </div>
+        <div class="stat">
+            <div class="stat-value" style="color: var(--yellow)">0</div>
+            <div class="stat-label">Closing Within 7 Days</div>
+        </div>
+        <div class="stat">
+            <div class="stat-value">4</div>
+            <div class="stat-label">Sources Active</div>
+        </div>
+    </div>
+
+    
+
+    <div class="filters">
+        <input type="text" class="search-box" id="search" placeholder="Search opportunities...">
+        <span class="pill source-pill" data-source="oregonbuys">OregonBuys (State) <strong>50</strong></span> <span class="pill source-pill" data-source="trimet">TriMet <strong>7</strong></span> <span class="pill source-pill" data-source="port">Port of Portland <strong>4</strong></span> <span class="pill source-pill" data-source="metro">Oregon Metro <strong>3</strong></span>
+        <span class="pill type-pill" data-type="other" style="background:#64748b">other <strong>51</strong></span> <span class="pill type-pill" data-type="RFP" style="background:#059669">RFP <strong>8</strong></span> <span class="pill type-pill" data-type="ITB" style="background:#d97706">ITB <strong>3</strong></span> <span class="pill type-pill" data-type="RFQ" style="background:#7c3aed">RFQ <strong>1</strong></span> <span class="pill type-pill" data-type="RFI" style="background:#2563eb">RFI <strong>1</strong></span>
+    </div>
+
+    <div id="rfp-count"></div>
+
+    <div class="card" style="padding: 0; overflow-x: auto;">
+        <table id="rfp-table">
+            <thead>
+                <tr>
+                    <th data-sort="source">Source</th>
+                    <th data-sort="type">Type</th>
+                    <th data-sort="title">Title</th>
+                    <th data-sort="due" class="hide-mobile">Due Date</th>
+                    <th data-sort="seen" class="hide-mobile">Found</th>
+                </tr>
+            </thead>
+            <tbody>
+                <tr class="rfp-row is-new" data-source="metro" data-type="other" data-title="" data-due="" data-seen="2026-04-03T23:17:03.352397"><td>Oregon Metro</td><td><span class="type-badge" style="background:#64748b">other</span></td><td class="rfp-title"><a href="https://bidlocker.us/Home/BidLockerUS" target="_blank" rel="noopener"></a><span class="new-badge">NEW</span></td><td class="due-date  hide-mobile"></td><td class="dim hide-mobile">04/03</td></tr><tr class="rfp-row is-new" data-source="metro" data-type="other" data-title="browse bid locker" data-due="" data-seen="2026-04-03T23:17:03.354067"><td>Oregon Metro</td><td><span class="type-badge" style="background:#64748b">other</span></td><td class="rfp-title"><a href="https://bidlocker.us/a/oregonmetro/BidLocker" target="_blank" rel="noopener">Browse Bid Locker</a><span class="new-badge">NEW</span></td><td class="due-date  hide-mobile"></td><td class="dim hide-mobile">04/03</td></tr><tr class="rfp-row is-new" data-source="metro" data-type="other" data-title="metro proposal template" data-due="" data-seen="2026-04-03T23:17:03.355188"><td>Oregon Metro</td><td><span class="type-badge" style="background:#64748b">other</span></td><td class="rfp-title"><a href="https://www.oregonmetro.gov/sites/default/files/2026-03/metro-proposal-template.docx" target="_blank" rel="noopener">Metro proposal template</a><span class="new-badge">NEW</span></td><td class="due-date  hide-mobile"></td><td class="dim hide-mobile">04/03</td></tr><tr class="rfp-row is-new" data-source="trimet" data-type="other" data-title="register now" data-due="" data-seen="2026-04-03T23:17:03.852487"><td>TriMet</td><td><span class="type-badge" style="background:#64748b">other</span></td><td class="rfp-title"><a href="https://solutions.sciquest.com/apps/Router/SupplierLogin?CustOrg=TriMet" target="_blank" rel="noopener">Register now</a><span class="new-badge">NEW</span></td><td class="due-date  hide-mobile"></td><td class="dim hide-mobile">04/03</td></tr><tr class="rfp-row is-new" data-source="trimet" data-type="other" data-title="registration guidepdf" data-due="" data-seen="2026-04-03T23:17:03.854180"><td>TriMet</td><td><span class="type-badge" style="background:#64748b">other</span></td><td class="rfp-title"><a href="https://trimet.org/procurement/pdf/Vendor Registration Guide.pdf" target="_blank" rel="noopener">Registration GuidePDF</a><span class="new-badge">NEW</span></td><td class="due-date  hide-mobile"></td><td class="dim hide-mobile">04/03</td></tr><tr class="rfp-row is-new" data-source="trimet" data-type="other" data-title="see a list of trimet contracts that have  been awarded." data-due="" data-seen="2026-04-03T23:17:03.855538"><td>TriMet</td><td><span class="type-badge" style="background:#64748b">other</span></td><td class="rfp-title"><a href="https://bids.sciquest.com/apps/Router/PublicEvent?CustomerOrg=TriMet" target="_blank" rel="noopener">See a list of TriMet contracts that have  been awarded.</a><span class="new-badge">NEW</span></td><td class="due-date  hide-mobile"></td><td class="dim hide-mobile">04/03</td></tr><tr class="rfp-row is-new" data-source="trimet" data-type="other" data-title="trimet contract review board rulespdf" data-due="" data-seen="2026-04-03T23:17:03.857674"><td>TriMet</td><td><span class="type-badge" style="background:#64748b">other</span></td><td class="rfp-title"><a href="https://trimet.org/procurement/pdf/trimet-review-board-rules.pdf?v=2025" target="_blank" rel="noopener">TriMet Contract Review Board RulesPDF</a><span class="new-badge">NEW</span></td><td class="due-date  hide-mobile"></td><td class="dim hide-mobile">04/03</td></tr><tr class="rfp-row is-new" data-source="trimet" data-type="other" data-title="contracting rulespdf" data-due="" data-seen="2026-04-03T23:17:03.859558"><td>TriMet</td><td><span class="type-badge" style="background:#64748b">other</span></td><td class="rfp-title"><a href="https://trimet.org/procurement/pdf/contracting-rules.pdf" target="_blank" rel="noopener">Contracting RulesPDF</a><span class="new-badge">NEW</span></td><td class="due-date  hide-mobile"></td><td class="dim hide-mobile">04/03</td></tr><tr class="rfp-row is-new" data-source="trimet" data-type="other" data-title="having trouble obtaining a performance bond for a project?" data-due="" data-seen="2026-04-03T23:17:03.860540"><td>TriMet</td><td><span class="type-badge" style="background:#64748b">other</span></td><td class="rfp-title"><a href="https://trimet.org/procurement/sba-bonding.htm" target="_blank" rel="noopener">Having trouble obtaining a performance bond for a project?</a><span class="new-badge">NEW</span></td><td class="due-date  hide-mobile"></td><td class="dim hide-mobile">04/03</td></tr><tr class="rfp-row is-new" data-source="trimet" data-type="other" data-title="find resources and contact information for vendors and contractors" data-due="" data-seen="2026-04-03T23:17:03.861507"><td>TriMet</td><td><span class="type-badge" style="background:#64748b">other</span></td><td class="rfp-title"><a href="https://trimet.org/departments/ap/index.htm" target="_blank" rel="noopener">Find resources and contact information for vendors and contractors</a><span class="new-badge">NEW</span></td><td class="due-date  hide-mobile"></td><td class="dim hide-mobile">04/03</td></tr><tr class="rfp-row is-new" data-source="port" data-type="other" data-title="vendors &amp; contractors" data-due="" data-seen="2026-04-03T23:17:36.072856"><td>Port of Portland</td><td><span class="type-badge" style="background:#64748b">other</span></td><td class="rfp-title"><a href="https://www.portofportland.com/Business/Vendors" target="_blank" rel="noopener">Vendors &amp; Contractors</a><span class="new-badge">NEW</span></td><td class="due-date  hide-mobile"></td><td class="dim hide-mobile">04/03</td></tr><tr class="rfp-row is-new" data-source="port" data-type="other" data-title="visit planetbids" data-due="" data-seen="2026-04-03T23:17:36.074443"><td>Port of Portland</td><td><span class="type-badge" style="background:#64748b">other</span></td><td class="rfp-title"><a href="https://www.planetbids.com/portal/portal.cfm?CompanyID=15598" target="_blank" rel="noopener">Visit PlanetBids</a><span class="new-badge">NEW</span></td><td class="due-date  hide-mobile"></td><td class="dim hide-mobile">04/03</td></tr><tr class="rfp-row is-new" data-source="port" data-type="other" data-title="navigating port of portland requests for proposal video." data-due="" data-seen="2026-04-03T23:17:36.075594"><td>Port of Portland</td><td><span class="type-badge" style="background:#64748b">other</span></td><td class="rfp-title"><a href="https://www.youtube.com/watch?v=29krmbcdlTQ" target="_blank" rel="noopener">Navigating Port of Portland Requests for Proposal video.</a><span class="new-badge">NEW</span></td><td class="due-date  hide-mobile"></td><td class="dim hide-mobile">04/03</td></tr><tr class="rfp-row is-new" data-source="port" data-type="other" data-title="foundations in construction contracting video" data-due="" data-seen="2026-04-03T23:17:36.076555"><td>Port of Portland</td><td><span class="type-badge" style="background:#64748b">other</span></td><td class="rfp-title"><a href="https://www.youtube.com/watch?v=qDsB1EgOgco" target="_blank" rel="noopener">Foundations in Construction Contracting video</a><span class="new-badge">NEW</span></td><td class="due-date  hide-mobile"></td><td class="dim hide-mobile">04/03</td></tr><tr class="rfp-row is-new" data-source="oregonbuys" data-type="other" data-title="mejdi mahjoub: courier services" data-due="" data-seen="2026-04-03T23:17:37.347034"><td>OregonBuys (State)</td><td><span class="type-badge" style="background:#64748b">other</span></td><td class="rfp-title">Mejdi Mahjoub: Courier Services<span class="new-badge">NEW</span></td><td class="due-date  hide-mobile"></td><td class="dim hide-mobile">04/03</td></tr><tr class="rfp-row is-new" data-source="oregonbuys" data-type="RFP" data-title="shawna  self: rfp no. 267014 security systems maintenance services" data-due="" data-seen="2026-04-03T23:17:37.348647"><td>OregonBuys (State)</td><td><span class="type-badge" style="background:#059669">RFP</span></td><td class="rfp-title">Shawna  Self: RFP No. 267014 Security Systems Maintenance Services<span class="new-badge">NEW</span></td><td class="due-date  hide-mobile"></td><td class="dim hide-mobile">04/03</td></tr><tr class="rfp-row is-new" data-source="oregonbuys" data-type="other" data-title="larry hutchinson: city of newport cathodic protection repairs and upgrades" data-due="" data-seen="2026-04-03T23:17:37.349975"><td>OregonBuys (State)</td><td><span class="type-badge" style="background:#64748b">other</span></td><td class="rfp-title">Larry Hutchinson: City of Newport Cathodic Protection Repairs and Upgrades<span class="new-badge">NEW</span></td><td class="due-date  hide-mobile"></td><td class="dim hide-mobile">04/03</td></tr><tr class="rfp-row is-new" data-source="oregonbuys" data-type="ITB" data-title="marcos campuzano olvera: itb 25-0025 southridge hs flooring replacement phase 1 &amp; phase 2" data-due="" data-seen="2026-04-03T23:17:37.351247"><td>OregonBuys (State)</td><td><span class="type-badge" style="background:#d97706">ITB</span></td><td class="rfp-title">Marcos Campuzano Olvera: ITB 25-0025 Southridge HS Flooring Replacement Phase 1 &amp; Phase 2<span class="new-badge">NEW</span></td><td class="due-date  hide-mobile"></td><td class="dim hide-mobile">04/03</td></tr><tr class="rfp-row is-new" data-source="oregonbuys" data-type="RFP" data-title="shawna  self: rfp no. 267020 investment custodial safekeeping and trust services" data-due="" data-seen="2026-04-03T23:17:37.352304"><td>OregonBuys (State)</td><td><span class="type-badge" style="background:#059669">RFP</span></td><td class="rfp-title">Shawna  Self: RFP No. 267020 Investment Custodial Safekeeping and Trust Services<span class="new-badge">NEW</span></td><td class="due-date  hide-mobile"></td><td class="dim hide-mobile">04/03</td></tr><tr class="rfp-row is-new" data-source="oregonbuys" data-type="other" data-title="isabel gilda: this  project  consists  of a  comprehensive  roofing  renewal  of  the  existing,  in-service  low-" data-due="" data-seen="2026-04-03T23:17:37.354145"><td>OregonBuys (State)</td><td><span class="type-badge" style="background:#64748b">other</span></td><td class="rfp-title">Isabel Gilda: This  project  consists  of a  comprehensive  roofing  renewal  of  the  existing,  in-service  low-<span class="new-badge">NEW</span></td><td class="due-date  hide-mobile"></td><td class="dim hide-mobile">04/03</td></tr><tr class="rfp-row is-new" data-source="oregonbuys" data-type="RFP" data-title="holly stutz: rfp for x-ray diffractometer instruments  (pcs# 600000-07001-rfp)" data-due="" data-seen="2026-04-03T23:17:37.355323"><td>OregonBuys (State)</td><td><span class="type-badge" style="background:#059669">RFP</span></td><td class="rfp-title">Holly Stutz: RFP for X-ray Diffractometer Instruments  (PCS# 600000-07001-RFP)<span class="new-badge">NEW</span></td><td class="due-date  hide-mobile"></td><td class="dim hide-mobile">04/03</td></tr><tr class="rfp-row is-new" data-source="oregonbuys" data-type="other" data-title="michael wong: s-2026-002 notice of special procurement for integrated community risk module" data-due="" data-seen="2026-04-03T23:17:37.356307"><td>OregonBuys (State)</td><td><span class="type-badge" style="background:#64748b">other</span></td><td class="rfp-title">Michael Wong: S-2026-002 Notice of Special Procurement for integrated Community Risk Module<span class="new-badge">NEW</span></td><td class="due-date  hide-mobile"></td><td class="dim hide-mobile">04/03</td></tr><tr class="rfp-row is-new" data-source="oregonbuys" data-type="other" data-title="carla smith: 904-0326rfp - domestic public relations services" data-due="" data-seen="2026-04-03T23:17:37.357658"><td>OregonBuys (State)</td><td><span class="type-badge" style="background:#64748b">other</span></td><td class="rfp-title">Carla Smith: 904-0326RFP - Domestic Public Relations Services<span class="new-badge">NEW</span></td><td class="due-date  hide-mobile"></td><td class="dim hide-mobile">04/03</td></tr><tr class="rfp-row is-new" data-source="oregonbuys" data-type="RFP" data-title="lance lorenz: rfp coordinated tribal transit plan" data-due="" data-seen="2026-04-03T23:17:37.358581"><td>OregonBuys (State)</td><td><span class="type-badge" style="background:#059669">RFP</span></td><td class="rfp-title">Lance Lorenz: RFP Coordinated Tribal Transit Plan<span class="new-badge">NEW</span></td><td class="due-date  hide-mobile"></td><td class="dim hide-mobile">04/03</td></tr><tr class="rfp-row is-new" data-source="oregonbuys" data-type="ITB" data-title="megan jelley: itb-2526-120 wichita asphalt upgrade project" data-due="" data-seen="2026-04-03T23:17:37.359539"><td>OregonBuys (State)</td><td><span class="type-badge" style="background:#d97706">ITB</span></td><td class="rfp-title">Megan Jelley: ITB-2526-120 Wichita Asphalt Upgrade Project<span class="new-badge">NEW</span></td><td class="due-date  hide-mobile"></td><td class="dim hide-mobile">04/03</td></tr><tr class="rfp-row is-new" data-source="oregonbuys" data-type="other" data-title="brianna sloane: gps monitoring software with mobile application" data-due="" data-seen="2026-04-03T23:17:37.360664"><td>OregonBuys (State)</td><td><span class="type-badge" style="background:#64748b">other</span></td><td class="rfp-title">Brianna Sloane: GPS Monitoring Software with Mobile Application<span class="new-badge">NEW</span></td><td class="due-date  hide-mobile"></td><td class="dim hide-mobile">04/03</td></tr><tr class="rfp-row is-new" data-source="oregonbuys" data-type="RFQ" data-title="julie curry: rfq/bva for cloud solution - for a staff scheduling system" data-due="" data-seen="2026-04-03T23:17:37.361646"><td>OregonBuys (State)</td><td><span class="type-badge" style="background:#7c3aed">RFQ</span></td><td class="rfp-title">Julie Curry: RFQ/BVA for Cloud Solution - for a Staff Scheduling System<span class="new-badge">NEW</span></td><td class="due-date  hide-mobile"></td><td class="dim hide-mobile">04/03</td></tr><tr class="rfp-row is-new" data-source="oregonbuys" data-type="RFI" data-title="ashley jackson: request for information for business retention and expansion services" data-due="" data-seen="2026-04-03T23:17:37.362684"><td>OregonBuys (State)</td><td><span class="type-badge" style="background:#2563eb">RFI</span></td><td class="rfp-title">Ashley Jackson: Request for Information for Business Retention and Expansion Services<span class="new-badge">NEW</span></td><td class="due-date  hide-mobile"></td><td class="dim hide-mobile">04/03</td></tr><tr class="rfp-row is-new" data-source="oregonbuys" data-type="ITB" data-title="michael wong: itb 2026-001 historic preservation window replacement" data-due="" data-seen="2026-04-03T23:17:37.363809"><td>OregonBuys (State)</td><td><span class="type-badge" style="background:#d97706">ITB</span></td><td class="rfp-title">Michael Wong: ITB 2026-001 Historic Preservation Window Replacement<span class="new-badge">NEW</span></td><td class="due-date  hide-mobile"></td><td class="dim hide-mobile">04/03</td></tr><tr class="rfp-row is-new" data-source="oregonbuys" data-type="other" data-title="mejdi mahjoub: sole source - eab - 5 years" data-due="" data-seen="2026-04-03T23:17:37.364671"><td>OregonBuys (State)</td><td><span class="type-badge" style="background:#64748b">other</span></td><td class="rfp-title">Mejdi Mahjoub: Sole Source - EAB - 5 Years<span class="new-badge">NEW</span></td><td class="due-date  hide-mobile"></td><td class="dim hide-mobile">04/03</td></tr><tr class="rfp-row is-new" data-source="oregonbuys" data-type="RFP" data-title="lance lorenz: rfp long range transportation plan" data-due="" data-seen="2026-04-03T23:17:37.365771"><td>OregonBuys (State)</td><td><span class="type-badge" style="background:#059669">RFP</span></td><td class="rfp-title">Lance Lorenz: RFP Long Range Transportation Plan<span class="new-badge">NEW</span></td><td class="due-date  hide-mobile"></td><td class="dim hide-mobile">04/03</td></tr><tr class="rfp-row is-new" data-source="oregonbuys" data-type="RFP" data-title="shawna  self: rfp no. 267017 actuarial services for valuation of other post-employment benefits (opeb)" data-due="" data-seen="2026-04-03T23:17:37.367148"><td>OregonBuys (State)</td><td><span class="type-badge" style="background:#059669">RFP</span></td><td class="rfp-title">Shawna  Self: RFP No. 267017 Actuarial Services for Valuation of Other Post-Employment Benefits (OPEB)<span class="new-badge">NEW</span></td><td class="due-date  hide-mobile"></td><td class="dim hide-mobile">04/03</td></tr><tr class="rfp-row is-new" data-source="oregonbuys" data-type="other" data-title="john bellville: notice - trout unlimited - sweet cron irrigation modernization project" data-due="" data-seen="2026-04-03T23:17:37.368192"><td>OregonBuys (State)</td><td><span class="type-badge" style="background:#64748b">other</span></td><td class="rfp-title">John Bellville: Notice - Trout Unlimited - Sweet Cron Irrigation Modernization Project<span class="new-badge">NEW</span></td><td class="due-date  hide-mobile"></td><td class="dim hide-mobile">04/03</td></tr><tr class="rfp-row is-new" data-source="oregonbuys" data-type="RFP" data-title="shawna  self: rfp no. 267016 arbitrage consultant services" data-due="" data-seen="2026-04-03T23:17:37.369258"><td>OregonBuys (State)</td><td><span class="type-badge" style="background:#059669">RFP</span></td><td class="rfp-title">Shawna  Self: RFP No. 267016 Arbitrage Consultant Services<span class="new-badge">NEW</span></td><td class="due-date  hide-mobile"></td><td class="dim hide-mobile">04/03</td></tr><tr class="rfp-row is-new" data-source="oregonbuys" data-type="other" data-title="lindsey  bergerson: clean methane sole source" data-due="" data-seen="2026-04-03T23:17:37.370457"><td>OregonBuys (State)</td><td><span class="type-badge" style="background:#64748b">other</span></td><td class="rfp-title">Lindsey  Bergerson: CLEAN METHANE SOLE SOURCE<span class="new-badge">NEW</span></td><td class="due-date  hide-mobile"></td><td class="dim hide-mobile">04/03</td></tr><tr class="rfp-row is-new" data-source="oregonbuys" data-type="other" data-title="lindsey  bergerson: marcab company sole source" data-due="" data-seen="2026-04-03T23:17:37.371467"><td>OregonBuys (State)</td><td><span class="type-badge" style="background:#64748b">other</span></td><td class="rfp-title">Lindsey  Bergerson: MARCAB COMPANY SOLE SOURCE<span class="new-badge">NEW</span></td><td class="due-date  hide-mobile"></td><td class="dim hide-mobile">04/03</td></tr><tr class="rfp-row is-new" data-source="oregonbuys" data-type="RFP" data-title="skye laidler: rfp for conservatorship investment services for professional investment advisor" data-due="" data-seen="2026-04-03T23:17:37.372538"><td>OregonBuys (State)</td><td><span class="type-badge" style="background:#059669">RFP</span></td><td class="rfp-title">Skye Laidler: RFP for Conservatorship Investment Services for Professional Investment Advisor<span class="new-badge">NEW</span></td><td class="due-date  hide-mobile"></td><td class="dim hide-mobile">04/03</td></tr><tr class="rfp-row is-new" data-source="oregonbuys" data-type="other" data-title="jennifer alton: notice sp amd#2 for ongoing o&amp;m and support services" data-due="" data-seen="2026-04-03T23:17:37.373563"><td>OregonBuys (State)</td><td><span class="type-badge" style="background:#64748b">other</span></td><td class="rfp-title">Jennifer Alton: Notice SP Amd#2 for ongoing O&amp;M and support services<span class="new-badge">NEW</span></td><td class="due-date  hide-mobile"></td><td class="dim hide-mobile">04/03</td></tr><tr class="rfp-row is-new" data-source="oregonbuys" data-type="other" data-title="lindsey  bergerson: govworx sole source" data-due="" data-seen="2026-04-03T23:17:37.374617"><td>OregonBuys (State)</td><td><span class="type-badge" style="background:#64748b">other</span></td><td class="rfp-title">Lindsey  Bergerson: GovWorx Sole Source<span class="new-badge">NEW</span></td><td class="due-date  hide-mobile"></td><td class="dim hide-mobile">04/03</td></tr><tr class="rfp-row is-new" data-source="oregonbuys" data-type="other" data-title="s-p00400-00016517" data-due="" data-seen="2026-04-03T23:17:37.375677"><td>OregonBuys (State)</td><td><span class="type-badge" style="background:#64748b">other</span></td><td class="rfp-title"><a href="https://oregonbuys.gov/bso/external/bidDetail.sda?docId=S-P00400-00016517&amp;external=true&amp;parentUrl=close" target="_blank" rel="noopener">S-P00400-00016517</a><span class="new-badge">NEW</span></td><td class="due-date  hide-mobile"></td><td class="dim hide-mobile">04/03</td></tr><tr class="rfp-row is-new" data-source="oregonbuys" data-type="other" data-title="s-ks0043-00016511" data-due="" data-seen="2026-04-03T23:17:37.376673"><td>OregonBuys (State)</td><td><span class="type-badge" style="background:#64748b">other</span></td><td class="rfp-title"><a href="https://oregonbuys.gov/bso/external/bidDetail.sda?docId=S-KS0043-00016511&amp;external=true&amp;parentUrl=close" target="_blank" rel="noopener">S-KS0043-00016511</a><span class="new-badge">NEW</span></td><td class="due-date  hide-mobile"></td><td class="dim hide-mobile">04/03</td></tr><tr class="rfp-row is-new" data-source="oregonbuys" data-type="other" data-title="s-kn0010-00016510" data-due="" data-seen="2026-04-03T23:17:37.377713"><td>OregonBuys (State)</td><td><span class="type-badge" style="background:#64748b">other</span></td><td class="rfp-title"><a href="https://oregonbuys.gov/bso/external/bidDetail.sda?docId=S-KN0010-00016510&amp;external=true&amp;parentUrl=close" target="_blank" rel="noopener">S-KN0010-00016510</a><span class="new-badge">NEW</span></td><td class="due-date  hide-mobile"></td><td class="dim hide-mobile">04/03</td></tr><tr class="rfp-row is-new" data-source="oregonbuys" data-type="other" data-title="s-p34048-00016507" data-due="" data-seen="2026-04-03T23:17:37.378663"><td>OregonBuys (State)</td><td><span class="type-badge" style="background:#64748b">other</span></td><td class="rfp-title"><a href="https://oregonbuys.gov/bso/external/bidDetail.sda?docId=S-P34048-00016507&amp;external=true&amp;parentUrl=close" target="_blank" rel="noopener">S-P34048-00016507</a><span class="new-badge">NEW</span></td><td class="due-date  hide-mobile"></td><td class="dim hide-mobile">04/03</td></tr><tr class="rfp-row is-new" data-source="oregonbuys" data-type="other" data-title="s-ks0043-00016506" data-due="" data-seen="2026-04-03T23:17:37.379736"><td>OregonBuys (State)</td><td><span class="type-badge" style="background:#64748b">other</span></td><td class="rfp-title"><a href="https://oregonbuys.gov/bso/external/bidDetail.sda?docId=S-KS0043-00016506&amp;external=true&amp;parentUrl=close" target="_blank" rel="noopener">S-KS0043-00016506</a><span class="new-badge">NEW</span></td><td class="due-date  hide-mobile"></td><td class="dim hide-mobile">04/03</td></tr><tr class="rfp-row is-new" data-source="oregonbuys" data-type="other" data-title="s-c00290-00016504" data-due="" data-seen="2026-04-03T23:17:37.381187"><td>OregonBuys (State)</td><td><span class="type-badge" style="background:#64748b">other</span></td><td class="rfp-title"><a href="https://oregonbuys.gov/bso/external/bidDetail.sda?docId=S-C00290-00016504&amp;external=true&amp;parentUrl=close" target="_blank" rel="noopener">S-C00290-00016504</a><span class="new-badge">NEW</span></td><td class="due-date  hide-mobile"></td><td class="dim hide-mobile">04/03</td></tr><tr class="rfp-row is-new" data-source="oregonbuys" data-type="other" data-title="s-580501-00016503" data-due="" data-seen="2026-04-03T23:17:37.382147"><td>OregonBuys (State)</td><td><span class="type-badge" style="background:#64748b">other</span></td><td class="rfp-title"><a href="https://oregonbuys.gov/bso/external/bidDetail.sda?docId=S-580501-00016503&amp;external=true&amp;parentUrl=close" target="_blank" rel="noopener">S-580501-00016503</a><span class="new-badge">NEW</span></td><td class="due-date  hide-mobile"></td><td class="dim hide-mobile">04/03</td></tr><tr class="rfp-row is-new" data-source="oregonbuys" data-type="other" data-title="s-kc0321-00016500" data-due="" data-seen="2026-04-03T23:17:37.383171"><td>OregonBuys (State)</td><td><span class="type-badge" style="background:#64748b">other</span></td><td class="rfp-title"><a href="https://oregonbuys.gov/bso/external/bidDetail.sda?docId=S-KC0321-00016500&amp;external=true&amp;parentUrl=close" target="_blank" rel="noopener">S-KC0321-00016500</a><span class="new-badge">NEW</span></td><td class="due-date  hide-mobile"></td><td class="dim hide-mobile">04/03</td></tr><tr class="rfp-row is-new" data-source="oregonbuys" data-type="other" data-title="s-976000-00016499" data-due="" data-seen="2026-04-03T23:17:37.384158"><td>OregonBuys (State)</td><td><span class="type-badge" style="background:#64748b">other</span></td><td class="rfp-title"><a href="https://oregonbuys.gov/bso/external/bidDetail.sda?docId=S-976000-00016499&amp;external=true&amp;parentUrl=close" target="_blank" rel="noopener">S-976000-00016499</a><span class="new-badge">NEW</span></td><td class="due-date  hide-mobile"></td><td class="dim hide-mobile">04/03</td></tr><tr class="rfp-row is-new" data-source="oregonbuys" data-type="other" data-title="s-x06001-00016496" data-due="" data-seen="2026-04-03T23:17:37.385140"><td>OregonBuys (State)</td><td><span class="type-badge" style="background:#64748b">other</span></td><td class="rfp-title"><a href="https://oregonbuys.gov/bso/external/bidDetail.sda?docId=S-X06001-00016496&amp;external=true&amp;parentUrl=close" target="_blank" rel="noopener">S-X06001-00016496</a><span class="new-badge">NEW</span></td><td class="due-date  hide-mobile"></td><td class="dim hide-mobile">04/03</td></tr><tr class="rfp-row is-new" data-source="oregonbuys" data-type="other" data-title="s-p03012-00016493" data-due="" data-seen="2026-04-03T23:17:37.386233"><td>OregonBuys (State)</td><td><span class="type-badge" style="background:#64748b">other</span></td><td class="rfp-title"><a href="https://oregonbuys.gov/bso/external/bidDetail.sda?docId=S-P03012-00016493&amp;external=true&amp;parentUrl=close" target="_blank" rel="noopener">S-P03012-00016493</a><span class="new-badge">NEW</span></td><td class="due-date  hide-mobile"></td><td class="dim hide-mobile">04/03</td></tr><tr class="rfp-row is-new" data-source="oregonbuys" data-type="other" data-title="s-c25102-00016492" data-due="" data-seen="2026-04-03T23:17:37.387195"><td>OregonBuys (State)</td><td><span class="type-badge" style="background:#64748b">other</span></td><td class="rfp-title"><a href="https://oregonbuys.gov/bso/external/bidDetail.sda?docId=S-C25102-00016492&amp;external=true&amp;parentUrl=close" target="_blank" rel="noopener">S-C25102-00016492</a><span class="new-badge">NEW</span></td><td class="due-date  hide-mobile"></td><td class="dim hide-mobile">04/03</td></tr><tr class="rfp-row is-new" data-source="oregonbuys" data-type="other" data-title="s-dasobo-00016491" data-due="" data-seen="2026-04-03T23:17:37.388302"><td>OregonBuys (State)</td><td><span class="type-badge" style="background:#64748b">other</span></td><td class="rfp-title"><a href="https://oregonbuys.gov/bso/external/bidDetail.sda?docId=S-DASOBO-00016491&amp;external=true&amp;parentUrl=close" target="_blank" rel="noopener">S-DASOBO-00016491</a><span class="new-badge">NEW</span></td><td class="due-date  hide-mobile"></td><td class="dim hide-mobile">04/03</td></tr><tr class="rfp-row is-new" data-source="oregonbuys" data-type="other" data-title="s-c25102-00016490" data-due="" data-seen="2026-04-03T23:17:37.389536"><td>OregonBuys (State)</td><td><span class="type-badge" style="background:#64748b">other</span></td><td class="rfp-title"><a href="https://oregonbuys.gov/bso/external/bidDetail.sda?docId=S-C25102-00016490&amp;external=true&amp;parentUrl=close" target="_blank" rel="noopener">S-C25102-00016490</a><span class="new-badge">NEW</span></td><td class="due-date  hide-mobile"></td><td class="dim hide-mobile">04/03</td></tr><tr class="rfp-row is-new" data-source="oregonbuys" data-type="other" data-title="s-kc0321-00016489" data-due="" data-seen="2026-04-03T23:17:37.390726"><td>OregonBuys (State)</td><td><span class="type-badge" style="background:#64748b">other</span></td><td class="rfp-title"><a href="https://oregonbuys.gov/bso/external/bidDetail.sda?docId=S-KC0321-00016489&amp;external=true&amp;parentUrl=close" target="_blank" rel="noopener">S-KC0321-00016489</a><span class="new-badge">NEW</span></td><td class="due-date  hide-mobile"></td><td class="dim hide-mobile">04/03</td></tr><tr class="rfp-row is-new" data-source="oregonbuys" data-type="other" data-title="s-p00400-00016487" data-due="" data-seen="2026-04-03T23:17:37.391768"><td>OregonBuys (State)</td><td><span class="type-badge" style="background:#64748b">other</span></td><td class="rfp-title"><a href="https://oregonbuys.gov/bso/external/bidDetail.sda?docId=S-P00400-00016487&amp;external=true&amp;parentUrl=close" target="_blank" rel="noopener">S-P00400-00016487</a><span class="new-badge">NEW</span></td><td class="due-date  hide-mobile"></td><td class="dim hide-mobile">04/03</td></tr><tr class="rfp-row is-new" data-source="oregonbuys" data-type="other" data-title="s-x06001-00016486" data-due="" data-seen="2026-04-03T23:17:37.393149"><td>OregonBuys (State)</td><td><span class="type-badge" style="background:#64748b">other</span></td><td class="rfp-title"><a href="https://oregonbuys.gov/bso/external/bidDetail.sda?docId=S-X06001-00016486&amp;external=true&amp;parentUrl=close" target="_blank" rel="noopener">S-X06001-00016486</a><span class="new-badge">NEW</span></td><td class="due-date  hide-mobile"></td><td class="dim hide-mobile">04/03</td></tr><tr class="rfp-row is-new" data-source="oregonbuys" data-type="other" data-title="s-ks0043-00016485" data-due="" data-seen="2026-04-03T23:17:37.394443"><td>OregonBuys (State)</td><td><span class="type-badge" style="background:#64748b">other</span></td><td class="rfp-title"><a href="https://oregonbuys.gov/bso/external/bidDetail.sda?docId=S-KS0043-00016485&amp;external=true&amp;parentUrl=close" target="_blank" rel="noopener">S-KS0043-00016485</a><span class="new-badge">NEW</span></td><td class="due-date  hide-mobile"></td><td class="dim hide-mobile">04/03</td></tr><tr class="rfp-row is-new" data-source="oregonbuys" data-type="other" data-title="s-q10040-00016484" data-due="" data-seen="2026-04-03T23:17:37.395567"><td>OregonBuys (State)</td><td><span class="type-badge" style="background:#64748b">other</span></td><td class="rfp-title"><a href="https://oregonbuys.gov/bso/external/bidDetail.sda?docId=S-Q10040-00016484&amp;external=true&amp;parentUrl=close" target="_blank" rel="noopener">S-Q10040-00016484</a><span class="new-badge">NEW</span></td><td class="due-date  hide-mobile"></td><td class="dim hide-mobile">04/03</td></tr><tr class="rfp-row is-new" data-source="oregonbuys" data-type="other" data-title="s-ks0043-00016483" data-due="" data-seen="2026-04-03T23:17:37.396508"><td>OregonBuys (State)</td><td><span class="type-badge" style="background:#64748b">other</span></td><td class="rfp-title"><a href="https://oregonbuys.gov/bso/external/bidDetail.sda?docId=S-KS0043-00016483&amp;external=true&amp;parentUrl=close" target="_blank" rel="noopener">S-KS0043-00016483</a><span class="new-badge">NEW</span></td><td class="due-date  hide-mobile"></td><td class="dim hide-mobile">04/03</td></tr><tr class="rfp-row is-new" data-source="oregonbuys" data-type="other" data-title="s-ks0043-00016482" data-due="" data-seen="2026-04-03T23:17:37.397476"><td>OregonBuys (State)</td><td><span class="type-badge" style="background:#64748b">other</span></td><td class="rfp-title"><a href="https://oregonbuys.gov/bso/external/bidDetail.sda?docId=S-KS0043-00016482&amp;external=true&amp;parentUrl=close" target="_blank" rel="noopener">S-KS0043-00016482</a><span class="new-badge">NEW</span></td><td class="due-date  hide-mobile"></td><td class="dim hide-mobile">04/03</td></tr><tr class="rfp-row is-new" data-source="oregonbuys" data-type="other" data-title="s-ks0043-00016481" data-due="" data-seen="2026-04-03T23:17:37.398671"><td>OregonBuys (State)</td><td><span class="type-badge" style="background:#64748b">other</span></td><td class="rfp-title"><a href="https://oregonbuys.gov/bso/external/bidDetail.sda?docId=S-KS0043-00016481&amp;external=true&amp;parentUrl=close" target="_blank" rel="noopener">S-KS0043-00016481</a><span class="new-badge">NEW</span></td><td class="due-date  hide-mobile"></td><td class="dim hide-mobile">04/03</td></tr><tr class="rfp-row is-new" data-source="oregonbuys" data-type="other" data-title="s-dasobo-00016480" data-due="" data-seen="2026-04-03T23:17:37.400000"><td>OregonBuys (State)</td><td><span class="type-badge" style="background:#64748b">other</span></td><td class="rfp-title"><a href="https://oregonbuys.gov/bso/external/bidDetail.sda?docId=S-DASOBO-00016480&amp;external=true&amp;parentUrl=close" target="_blank" rel="noopener">S-DASOBO-00016480</a><span class="new-badge">NEW</span></td><td class="due-date  hide-mobile"></td><td class="dim hide-mobile">04/03</td></tr><tr class="rfp-row is-new" data-source="oregonbuys" data-type="other" data-title="s-dasobo-00016479" data-due="" data-seen="2026-04-03T23:17:37.401377"><td>OregonBuys (State)</td><td><span class="type-badge" style="background:#64748b">other</span></td><td class="rfp-title"><a href="https://oregonbuys.gov/bso/external/bidDetail.sda?docId=S-DASOBO-00016479&amp;external=true&amp;parentUrl=close" target="_blank" rel="noopener">S-DASOBO-00016479</a><span class="new-badge">NEW</span></td><td class="due-date  hide-mobile"></td><td class="dim hide-mobile">04/03</td></tr><tr class="rfp-row is-new" data-source="oregonbuys" data-type="other" data-title="s-ks0043-00016478" data-due="" data-seen="2026-04-03T23:17:37.402604"><td>OregonBuys (State)</td><td><span class="type-badge" style="background:#64748b">other</span></td><td class="rfp-title"><a href="https://oregonbuys.gov/bso/external/bidDetail.sda?docId=S-KS0043-00016478&amp;external=true&amp;parentUrl=close" target="_blank" rel="noopener">S-KS0043-00016478</a><span class="new-badge">NEW</span></td><td class="due-date  hide-mobile"></td><td class="dim hide-mobile">04/03</td></tr>
+            </tbody>
+        </table>
+    </div>
+
+    <details class="history-table">
+        <summary style="cursor:pointer; color: var(--text-dim); margin-bottom: 12px;">Scrape History</summary>
+        <div class="card" style="padding: 0; overflow-x: auto;">
+            <table>
+                <thead><tr><th>Source</th><th>Status</th><th>Found</th><th>New</th><th>When</th></tr></thead>
+                <tbody><tr><td>OregonBuys (State)</td><td><span class="status-success">success</span></td><td>50</td><td>50</td><td class="dim">04/03 23:17</td></tr><tr><td>Port of Portland</td><td><span class="status-success">success</span></td><td>4</td><td>4</td><td class="dim">04/03 23:17</td></tr><tr><td>TriMet</td><td><span class="status-success">success</span></td><td>8</td><td>7</td><td class="dim">04/03 23:17</td></tr><tr><td>Oregon Metro</td><td><span class="status-success">success</span></td><td>3</td><td>3</td><td class="dim">04/03 23:17</td></tr><tr><td>Multnomah County</td><td><span class="status-success">success</span></td><td>0</td><td>0</td><td class="dim">04/03 23:17</td></tr><tr><td>City of Portland</td><td><span class="status-error">error</span></td><td>0</td><td>0</td><td class="dim">04/03 23:16</td></tr></tbody>
+            </table>
+        </div>
+    </details>
+</div>
+
+<script>
+const rows = document.querySelectorAll('.rfp-row');
+const search = document.getElementById('search');
+const countEl = document.getElementById('rfp-count');
+let activeSource = null, activeType = null;
+
+function updateCount() {
+    const visible = document.querySelectorAll('.rfp-row:not([style*="display: none"])').length;
+    countEl.textContent = `Showing ${visible} of ${rows.length} opportunities`;
+}
+
+function filterRows() {
+    const q = search.value.toLowerCase();
+    rows.forEach(row => {
+        const text = row.textContent.toLowerCase();
+        const src = row.dataset.source;
+        const type = row.dataset.type;
+        const matchSearch = !q || text.includes(q);
+        const matchSource = !activeSource || src === activeSource;
+        const matchType = !activeType || type === activeType;
+        row.style.display = (matchSearch && matchSource && matchType) ? '' : 'none';
+    });
+    updateCount();
+}
+
+search.addEventListener('input', filterRows);
+
+document.querySelectorAll('.source-pill').forEach(pill => {
+    pill.addEventListener('click', () => {
+        const src = pill.dataset.source;
+        if (activeSource === src) { activeSource = null; pill.classList.remove('active'); }
+        else {
+            document.querySelectorAll('.source-pill').forEach(p => p.classList.remove('active'));
+            activeSource = src; pill.classList.add('active');
+        }
+        filterRows();
+    });
+});
+
+document.querySelectorAll('.type-pill').forEach(pill => {
+    pill.addEventListener('click', () => {
+        const t = pill.dataset.type;
+        if (activeType === t) { activeType = null; pill.classList.remove('active'); }
+        else {
+            document.querySelectorAll('.type-pill').forEach(p => p.classList.remove('active'));
+            activeType = t; pill.classList.add('active');
+        }
+        filterRows();
+    });
+});
+
+// Column sorting
+document.querySelectorAll('th[data-sort]').forEach(th => {
+    th.addEventListener('click', () => {
+        const key = th.dataset.sort;
+        const tbody = document.querySelector('#rfp-table tbody');
+        const arr = Array.from(rows);
+        const dir = th.classList.contains('sort-asc') ? -1 : 1;
+        document.querySelectorAll('th').forEach(t => t.classList.remove('sort-asc', 'sort-desc'));
+        th.classList.add(dir === 1 ? 'sort-asc' : 'sort-desc');
+        arr.sort((a, b) => {
+            const av = (a.dataset[key] || '').toLowerCase();
+            const bv = (b.dataset[key] || '').toLowerCase();
+            return av < bv ? -dir : av > bv ? dir : 0;
+        });
+        arr.forEach(r => tbody.appendChild(r));
+    });
+});
+
+updateCount();
+</script>
+</body>
+</html>

@@ -1,0 +1,30 @@
+Scraping portland... 23:16:59 [httpx] INFO: HTTP Request: GET https://www.portland.gov/business-opportunities "HTTP/1.1 403 Forbidden"
+23:16:59 [localizer.scrapers.base] ERROR: [portland] Scrape failed: Client error '403 Forbidden' for url 'https://www.portland.gov/business-opportunities'
+For more information check: https://developer.mozilla.org/en-US/docs/Web/HTTP/Status/403
+FAILED: Client error '403 Forbidden' for url 
+'https://www.portland.gov/business-opportunities'
+For more information check: 
+https://developer.mozilla.org/en-US/docs/Web/HTTP/Status/403
+Scraping multnomah... 23:17:00 [httpx] INFO: HTTP Request: GET https://bids.sciquest.com/apps/Router/PublicEvent?CustomerOrg=Multnomah "HTTP/1.1 200 200"
+23:17:00 [localizer.scrapers.base] INFO: [multnomah] Found 0 RFPs, 0 new
+0 found, 0 new
+Scraping metro... 23:17:03 [httpx] INFO: HTTP Request: GET https://www.oregonmetro.gov/about-metro/doing-business-metro/current-contract-opportunities "HTTP/1.1 200 OK"
+23:17:03 [localizer.scrapers.base] INFO: [metro] Found 3 RFPs, 3 new
+3 found, 3 new
+Scraping trimet... 23:17:03 [httpx] INFO: HTTP Request: GET https://bids.sciquest.com/apps/Router/PublicEvent?CustomerOrg=TriMet "HTTP/1.1 200 200"
+23:17:03 [httpx] INFO: HTTP Request: GET https://trimet.org/procurement/ "HTTP/1.1 200 OK"
+23:17:03 [localizer.scrapers.base] INFO: [trimet] Found 8 RFPs, 7 new
+8 found, 7 new
+Scraping port... 23:17:35 [localizer.scrapers.port_of_portland] WARNING: [port] PlanetBids JS fetch failed, trying static: Page.wait_for_selector: Timeout 30000ms exceeded.
+Call log:
+  - waiting for locator("table, .bid-opportunity, [class*='opportunity']") to be visible
+
+23:17:35 [httpx] INFO: HTTP Request: GET https://vendors.planetbids.com/portal/15598/bo/bo-search "HTTP/1.1 202 Accepted"
+23:17:35 [httpx] INFO: HTTP Request: GET https://www.portofportland.com/business/Vendors "HTTP/1.1 200 OK"
+23:17:36 [localizer.scrapers.base] INFO: [port] Found 4 RFPs, 4 new
+4 found, 4 new
+Scraping oregonbuys... 23:17:37 [httpx] INFO: HTTP Request: GET https://oregonbuys.gov/bso/view/search/external/advancedSearchBid.xhtml?openBids=true "HTTP/1.1 200 "
+23:17:37 [localizer.scrapers.base] INFO: [oregonbuys] Found 50 RFPs, 50 new
+50 found, 50 new
+
+Total: 65 solicitations found, 64 new
