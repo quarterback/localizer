@@ -3,7 +3,7 @@
 import logging
 
 from localizer.db import RFP
-from localizer.scrapers.base import BaseScraper
+from localizer.scrapers.base import BaseScraper, PROCUREMENT_KEYWORDS
 
 logger = logging.getLogger(__name__)
 
@@ -77,6 +77,7 @@ class PortOfPortlandScraper(BaseScraper):
                 id=self.make_id(href or title),
                 source=self.name,
                 title=title,
+                solicitation_type=self.detect_type(title),
                 url=href or None,
             ))
 
@@ -95,16 +96,15 @@ class PortOfPortlandScraper(BaseScraper):
             text = link.get_text(strip=True)
             if not text or len(text) < 10:
                 continue
-            if any(kw in text.lower() or kw in href.lower() for kw in (
-                "rfp", "rfq", "bid", "solicitation", "proposal",
-                "planetbids", "procurement",
-            )):
+            combined = (text + " " + href).lower()
+            if any(kw in combined for kw in PROCUREMENT_KEYWORDS + ("planetbids",)):
                 if not href.startswith("http"):
                     href = f"https://www.portofportland.com{href}"
                 rfps.append(RFP(
                     id=self.make_id(href),
                     source=self.name,
                     title=text,
+                    solicitation_type=self.detect_type(text),
                     url=href,
                 ))
 
@@ -142,6 +142,7 @@ class PortOfPortlandScraper(BaseScraper):
             id=self.make_id(bid_num or title),
             source=self.name,
             title=title,
+            solicitation_type=self.detect_type(title),
             url=url,
             due_date=due,
         )

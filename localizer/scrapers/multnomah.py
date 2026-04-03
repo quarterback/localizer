@@ -96,10 +96,14 @@ class MultnomahScraper(BaseScraper):
                 break
 
         rfp_id = self.make_id(event_id or title)
+        sol_type = category if category and category.upper() in (
+            "RFP", "RFI", "RFQ", "IFB", "ITB", "SOQ",
+        ) else self.detect_type(title)
         return RFP(
             id=rfp_id,
             source=self.name,
             title=title,
+            solicitation_type=sol_type,
             url=url,
             posted_date=posted_date,
             due_date=due_date,
@@ -123,5 +127,6 @@ class MultnomahScraper(BaseScraper):
             id=rfp_id,
             source=self.name,
             title=title,
+            solicitation_type=self.detect_type(title),
             url=href or None,
         )

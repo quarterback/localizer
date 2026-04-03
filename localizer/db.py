@@ -1,4 +1,4 @@
-"""SQLite database layer for RFP storage and querying."""
+"""SQLite database layer for solicitation storage and querying."""
 
 import sqlite3
 from dataclasses import dataclass, field, asdict
@@ -13,6 +13,7 @@ CREATE TABLE IF NOT EXISTS rfps (
     id TEXT PRIMARY KEY,
     source TEXT NOT NULL,
     title TEXT NOT NULL,
+    solicitation_type TEXT DEFAULT 'other',
     description TEXT,
     url TEXT,
     posted_date TEXT,
@@ -33,6 +34,7 @@ CREATE INDEX IF NOT EXISTS idx_rfps_due_date ON rfps(due_date);
 CREATE INDEX IF NOT EXISTS idx_rfps_status ON rfps(status);
 CREATE INDEX IF NOT EXISTS idx_rfps_first_seen ON rfps(first_seen);
 CREATE INDEX IF NOT EXISTS idx_rfps_notified ON rfps(notified);
+CREATE INDEX IF NOT EXISTS idx_rfps_solicitation_type ON rfps(solicitation_type);
 
 CREATE TABLE IF NOT EXISTS scrape_log (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -46,12 +48,18 @@ CREATE TABLE IF NOT EXISTS scrape_log (
 );
 """
 
+# Migration for existing databases without solicitation_type column
+MIGRATIONS = [
+    "ALTER TABLE rfps ADD COLUMN solicitation_type TEXT DEFAULT 'other'",
+]
+
 
 @dataclass
 class RFP:
     id: str
     source: str
     title: str
+    solicitation_type: str = "other"
     description: Optional[str] = None
     url: Optional[str] = None
     posted_date: Optional[str] = None
@@ -73,6 +81,16 @@ class Database:
         self.conn = sqlite3.connect(str(db_path))
         self.conn.row_factory = sqlite3.Row
         self.conn.executescript(SCHEMA)
+        self._run_migrations()
+
+    def _run_migrations(self):
+        """Apply any pending migrations for schema changes."""
+        for sql in MIGRATIONS:
+            try:
+                self.conn.execute(sql)
+                self.conn.commit()
+            except sqlite3.OperationalError:
+                pass  # Column/index already exists
 
     def upsert_rfp(self, rfp: RFP) -> bool:
         """Insert or update an RFP. Returns True if this is a new RFP."""
@@ -81,14 +99,15 @@ class Database:
 
         if existing:
             self.conn.execute(
-                """UPDATE rfps SET title=?, description=?, url=?, posted_date=?,
-                   due_date=?, category=?, estimated_value=?, contact_name=?,
-                   contact_email=?, status=?, raw_html=?, last_seen=?
+                """UPDATE rfps SET title=?, solicitation_type=?, description=?, url=?,
+                   posted_date=?, due_date=?, category=?, estimated_value=?,
+                   contact_name=?, contact_email=?, status=?, raw_html=?, last_seen=?
                    WHERE id=?""",
                 (
-                    rfp.title, rfp.description, rfp.url, rfp.posted_date,
-                    rfp.due_date, rfp.category, rfp.estimated_value, rfp.contact_name,
-                    rfp.contact_email, rfp.status, rfp.raw_html, now, rfp.id,
+                    rfp.title, rfp.solicitation_type, rfp.description, rfp.url,
+                    rfp.posted_date, rfp.due_date, rfp.category, rfp.estimated_value,
+                    rfp.contact_name, rfp.contact_email, rfp.status, rfp.raw_html,
+                    now, rfp.id,
                 ),
             )
             self.conn.commit()

@@ -62,6 +62,7 @@ class OregonBuysScraper(BaseScraper):
                     id=self.make_id(href),
                     source=self.name,
                     title=title,
+                    solicitation_type=self.detect_type(title),
                     url=href,
                 ))
 
@@ -113,11 +114,13 @@ class OregonBuysScraper(BaseScraper):
                 agency = data[key].get_text(strip=True)
                 break
 
+        full_title = f"{agency}: {title}" if agency else title
         rfp_id = self.make_id(sol_num or title)
         return RFP(
             id=rfp_id,
             source=self.name,
-            title=f"{agency}: {title}" if agency else title,
+            title=full_title,
+            solicitation_type=self.detect_type(f"{full_title} {category or ''}"),
             url=url,
             posted_date=posted,
             due_date=due,

@@ -5,7 +5,7 @@ import re
 from typing import Optional
 
 from localizer.db import RFP
-from localizer.scrapers.base import BaseScraper
+from localizer.scrapers.base import BaseScraper, PROCUREMENT_KEYWORDS
 
 logger = logging.getLogger(__name__)
 
@@ -61,7 +61,11 @@ class PortlandScraper(BaseScraper):
                     rfps.append(rfp)
 
         # Also look for linked items in article/content blocks
-        for link in page.select("a[href*='solicitation'], a[href*='bid'], a[href*='rfp']"):
+        selectors = ", ".join(
+            f"a[href*='{kw}']"
+            for kw in ("solicitation", "bid", "rfp", "rfq", "rfi", "proposal", "procurement")
+        )
+        for link in page.select(selectors):
             title = link.get_text(strip=True)
             href = link.get("href", "")
             if title and len(title) > 5:
@@ -72,6 +76,7 @@ class PortlandScraper(BaseScraper):
                     id=rfp_id,
                     source=self.name,
                     title=title,
+                    solicitation_type=self.detect_type(title),
                     url=href,
                 ))
 
@@ -94,12 +99,14 @@ class PortlandScraper(BaseScraper):
                 href = f"https://service.ariba.com{href}"
 
             rfp_id = self.make_id("ariba", href or title)
+            desc = self._extract_text(posting, ".description, [class*='desc']")
             rfps.append(RFP(
                 id=rfp_id,
                 source=self.name,
                 title=title,
+                solicitation_type=self.detect_type(f"{title} {desc or ''}"),
                 url=href,
-                description=self._extract_text(posting, ".description, [class*='desc']"),
+                description=desc,
             ))
 
         return rfps
@@ -151,6 +158,7 @@ class PortlandScraper(BaseScraper):
             id=rfp_id,
             source=self.name,
             title=title,
+            solicitation_type=self.detect_type(title),
             url=url,
             posted_date=posted,
             due_date=due,

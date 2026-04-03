@@ -2,6 +2,7 @@
 
 import hashlib
 import logging
+import re
 from abc import ABC, abstractmethod
 from datetime import datetime
 from typing import Optional
@@ -13,9 +14,33 @@ from localizer.db import RFP, Database
 
 logger = logging.getLogger(__name__)
 
+# All solicitation types we track
+SOLICITATION_TYPES = {
+    "rfp": "RFP",      # Request for Proposal
+    "rfi": "RFI",      # Request for Information
+    "rfq": "RFQ",      # Request for Qualifications / Quote
+    "rfs": "RFS",      # Request for Services
+    "ifb": "IFB",      # Invitation for Bid
+    "itb": "ITB",      # Invitation to Bid
+    "itn": "ITN",      # Invitation to Negotiate
+    "soq": "SOQ",      # Statement of Qualifications
+    "sow": "SOW",      # Statement of Work
+    "boa": "BOA",      # Blanket Order Agreement
+    "idiq": "IDIQ",    # Indefinite Delivery/Indefinite Quantity
+    "pss": "PSS",      # Personal/Professional Services Solicitation
+}
+
+# Keywords that indicate any procurement opportunity (broad match for link filtering)
+PROCUREMENT_KEYWORDS = (
+    "rfp", "rfi", "rfq", "rfs", "ifb", "itb", "itn", "soq", "sow",
+    "bid", "solicitation", "proposal", "procurement", "contract",
+    "qualification", "quote", "invitation", "opportunity",
+    "consultant", "advisory", "services",
+)
+
 
 class BaseScraper(ABC):
-    """Base class for all RFP portal scrapers."""
+    """Base class for all procurement portal scrapers."""
 
     name: str = "base"
     base_url: str = ""
@@ -25,7 +50,7 @@ class BaseScraper(ABC):
         self.client = httpx.Client(
             timeout=timeout,
             headers={
-                "User-Agent": "Localizer/0.1 (Portland RFP Monitor; civic-tech research)",
+                "User-Agent": "Localizer/0.1 (Portland procurement monitor; civic-tech research)",
             },
             follow_redirects=True,
         )
@@ -45,9 +70,39 @@ class BaseScraper(ABC):
     def soup(self, html: str) -> BeautifulSoup:
         return BeautifulSoup(html, "lxml")
 
+    def detect_type(self, text: str) -> str:
+        """Detect solicitation type from title/description text.
+
+        Returns one of: RFP, RFI, RFQ, IFB, ITB, ITN, SOQ, SOW, RFS, BOA, IDIQ, PSS, or 'other'.
+        """
+        if not text:
+            return "other"
+        upper = text.upper()
+        # Check for explicit abbreviations first (with word boundaries)
+        for abbrev, label in SOLICITATION_TYPES.items():
+            if re.search(rf'\b{abbrev.upper()}\b', upper):
+                return label
+        # Check for spelled-out forms
+        lower = text.lower()
+        if "request for proposal" in lower:
+            return "RFP"
+        if "request for information" in lower:
+            return "RFI"
+        if "request for qualif" in lower or "request for quote" in lower:
+            return "RFQ"
+        if "request for service" in lower:
+            return "RFS"
+        if "invitation for bid" in lower or "invitation to bid" in lower:
+            return "IFB"
+        if "statement of qualif" in lower:
+            return "SOQ"
+        if "personal service" in lower or "professional service" in lower:
+            return "PSS"
+        return "other"
+
     @abstractmethod
     def scrape(self) -> list[RFP]:
-        """Scrape the portal and return a list of RFPs."""
+        """Scrape the portal and return a list of solicitations."""
         ...
 
     def run(self) -> tuple[int, int]:

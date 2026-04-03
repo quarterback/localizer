@@ -45,6 +45,29 @@ class TestBaseScraper:
         assert s.parse_date(None) is None
         assert s.parse_date("") is None
 
+    def test_detect_type(self, db):
+        class DummyScraper(BaseScraper):
+            name = "test"
+            base_url = ""
+            def scrape(self):
+                return []
+
+        s = DummyScraper(db)
+        assert s.detect_type("RFP for Website Redesign") == "RFP"
+        assert s.detect_type("RFI - Market Research for Transit") == "RFI"
+        assert s.detect_type("RFQ: Structural Engineering Services") == "RFQ"
+        assert s.detect_type("IFB 2026-001 Road Paving") == "IFB"
+        assert s.detect_type("ITB for Office Supplies") == "ITB"
+        assert s.detect_type("SOQ for Architectural Services") == "SOQ"
+        assert s.detect_type("Request for Proposal - IT Audit") == "RFP"
+        assert s.detect_type("Request for Information: Cloud Services") == "RFI"
+        assert s.detect_type("Request for Qualifications - Engineering") == "RFQ"
+        assert s.detect_type("Personal Services Contract") == "PSS"
+        assert s.detect_type("Professional Services: PM Support") == "PSS"
+        assert s.detect_type("General maintenance work") == "other"
+        assert s.detect_type("") == "other"
+        assert s.detect_type(None) == "other"
+
 
 class TestPortlandScraper:
     def test_parse_table(self, db):

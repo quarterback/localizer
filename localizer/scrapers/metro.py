@@ -3,7 +3,7 @@
 import logging
 
 from localizer.db import RFP
-from localizer.scrapers.base import BaseScraper
+from localizer.scrapers.base import BaseScraper, PROCUREMENT_KEYWORDS
 
 logger = logging.getLogger(__name__)
 
@@ -78,6 +78,7 @@ class MetroScraper(BaseScraper):
                 id=self.make_id(href or title),
                 source=self.name,
                 title=title,
+                solicitation_type=self.detect_type(title),
                 url=href or None,
             ))
 
@@ -98,16 +99,15 @@ class MetroScraper(BaseScraper):
             # Filter for links that look like solicitations
             if not text or len(text) < 10:
                 continue
-            if any(kw in href.lower() or kw in text.lower() for kw in (
-                "bid", "rfp", "rfq", "solicitation", "proposal", "procurement",
-                "bidlocker", "contract",
-            )):
+            combined = (href + " " + text).lower()
+            if any(kw in combined for kw in PROCUREMENT_KEYWORDS + ("bidlocker",)):
                 if not href.startswith("http"):
                     href = f"https://www.oregonmetro.gov{href}"
                 rfps.append(RFP(
                     id=self.make_id(href),
                     source=self.name,
                     title=text,
+                    solicitation_type=self.detect_type(text),
                     url=href,
                 ))
 
@@ -147,6 +147,7 @@ class MetroScraper(BaseScraper):
             id=self.make_id(title),
             source=self.name,
             title=title,
+            solicitation_type=self.detect_type(title),
             url=url,
             due_date=due,
         )

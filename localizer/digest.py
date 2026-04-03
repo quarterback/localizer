@@ -13,7 +13,7 @@ Localizer RFP Digest — {{ now }}
 {{ rfps | length }} new opportunity(ies) found:
 
 {% for rfp in rfps %}
-{{ loop.index }}. [{{ rfp.source | upper }}] {{ rfp.title }}
+{{ loop.index }}. [{{ rfp.source | upper }}] [{{ rfp.solicitation_type | default("other") | upper }}] {{ rfp.title }}
    {% if rfp.due_date %}Due: {{ rfp.due_date }}{% endif %}
    {% if rfp.category %}Category: {{ rfp.category }}{% endif %}
    {% if rfp.estimated_value %}Est. Value: {{ rfp.estimated_value }}{% endif %}
@@ -47,6 +47,7 @@ HTML_DIGEST_TEMPLATE = Template("""\
 {% for rfp in rfps %}
 <div class="rfp">
   <span class="source">{{ rfp.source | upper }}</span>
+  <span class="source" style="background: #555;">{{ rfp.solicitation_type | default("other") | upper }}</span>
   <h3>{% if rfp.url %}<a href="{{ rfp.url }}">{{ rfp.title }}</a>{% else %}{{ rfp.title }}{% endif %}</h3>
   <div class="meta">
     {% if rfp.due_date %}<span class="due">Due: {{ rfp.due_date }}</span> &bull; {% endif %}

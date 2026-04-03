@@ -29,7 +29,7 @@ def setup_logging(verbose: bool):
 @click.option("-v", "--verbose", is_flag=True, help="Verbose logging")
 @click.pass_context
 def main(ctx, db_path, verbose):
-    """Localizer: Portland-area government RFP monitor."""
+    """Localizer: Portland-area government procurement monitor (RFP/RFI/RFQ/IFB and more)."""
     setup_logging(verbose)
     ctx.ensure_object(dict)
     ctx.obj["db"] = Database(Path(db_path))
@@ -67,7 +67,7 @@ def scrape(ctx, sources):
         finally:
             scraper.close()
 
-    console.print(f"\n[bold]Total: {total_found} RFPs found, {total_new} new[/bold]")
+    console.print(f"\n[bold]Total: {total_found} solicitations found, {total_new} new[/bold]")
 
 
 @main.command(name="list")
@@ -198,6 +198,7 @@ def sources(ctx):
 def _print_rfp_table(rfps: list[dict]):
     table = Table(show_lines=True)
     table.add_column("Source", style="cyan", width=12)
+    table.add_column("Type", width=6)
     table.add_column("Title", style="bold", max_width=50)
     table.add_column("Due Date", width=12)
     table.add_column("Category", width=15)
@@ -220,8 +221,15 @@ def _print_rfp_table(rfps: list[dict]):
             except ValueError:
                 pass
 
+        sol_type = r.get("solicitation_type") or "other"
+        type_style = {
+            "RFP": "bold green", "RFI": "bold blue", "RFQ": "bold magenta",
+            "IFB": "bold yellow", "ITB": "bold yellow",
+        }.get(sol_type, "dim")
+
         table.add_row(
             r.get("source", ""),
+            f"[{type_style}]{sol_type}[/{type_style}]",
             r.get("title", ""),
             f"[{due_style}]{due}[/{due_style}]" if due_style else due,
             r.get("category") or "",
