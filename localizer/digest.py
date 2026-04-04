@@ -1,24 +1,28 @@
-"""Digest generation for RFP notifications."""
+"""Digest generation for procurement notifications."""
 
 from datetime import datetime
 
 from jinja2 import Template
 
 from localizer.db import Database
+from localizer.scoring import score_rfps, filter_rfps
+
 
 DIGEST_TEMPLATE = Template("""\
-Localizer RFP Digest — {{ now }}
+Localizer Procurement Digest — {{ now }}
 {{ "=" * 60 }}
 
 {{ rfps | length }} new opportunity(ies) found:
 
-{% for rfp in rfps %}
-{{ loop.index }}. [{{ rfp.source | upper }}] [{{ rfp.solicitation_type | default("other") | upper }}] {{ rfp.title }}
-   {% if rfp.due_date %}Due: {{ rfp.due_date }}{% endif %}
-   {% if rfp.category %}Category: {{ rfp.category }}{% endif %}
-   {% if rfp.estimated_value %}Est. Value: {{ rfp.estimated_value }}{% endif %}
-   {% if rfp.url %}URL: {{ rfp.url }}{% endif %}
-   {% if rfp.description %}{{ rfp.description[:200] }}{% if rfp.description|length > 200 %}...{% endif %}{% endif %}
+{% for item in scored %}
+{{ loop.index }}. [{{ item.priority | upper }}] [{{ item.rfp.source | upper }}] [{{ item.rfp.solicitation_type | default("other") | upper }}] Score: {{ item.score }}/100
+   {{ item.rfp.title }}
+   {% if item.rfp.due_date %}Due: {{ item.rfp.due_date }}{% endif %}
+   {% if item.rfp.category %}Category: {{ item.rfp.category }}{% endif %}
+   {% if item.rfp.estimated_value %}Est. Value: {{ item.rfp.estimated_value }}{% endif %}
+   {% if item.matched_keywords %}Matched: {{ item.matched_keywords | join(", ") }}{% endif %}
+   {% if item.rfp.url %}{{ item.rfp.url }}{% endif %}
+   {% if item.rfp.description %}{{ item.rfp.description[:200] }}{% if item.rfp.description|length > 200 %}...{% endif %}{% endif %}
 
 {% endfor %}
 ---
@@ -30,31 +34,50 @@ HTML_DIGEST_TEMPLATE = Template("""\
 <html>
 <head>
 <style>
-  body { font-family: -apple-system, system-ui, sans-serif; max-width: 700px; margin: 0 auto; padding: 20px; }
+  body { font-family: -apple-system, system-ui, sans-serif; max-width: 700px; margin: 0 auto; padding: 20px; background: #f8f9fa; }
   h1 { color: #1a1a1a; border-bottom: 2px solid #0066cc; padding-bottom: 10px; }
-  .rfp { border: 1px solid #e0e0e0; border-radius: 8px; padding: 16px; margin: 12px 0; }
-  .rfp h3 { margin: 0 0 8px 0; }
-  .source { display: inline-block; background: #0066cc; color: white; padding: 2px 8px; border-radius: 4px; font-size: 12px; }
-  .due { color: #cc0000; font-weight: bold; }
-  .meta { color: #666; font-size: 14px; }
+  .rfp { border: 1px solid #e0e0e0; border-radius: 8px; padding: 16px; margin: 12px 0; background: white; }
+  .rfp.high { border-left: 4px solid #059669; }
+  .rfp.medium { border-left: 4px solid #d97706; }
+  .rfp.low { border-left: 4px solid #94a3b8; }
+  .rfp h3 { margin: 0 0 8px 0; font-size: 16px; }
+  .rfp h3 a { color: #0066cc; text-decoration: none; }
+  .rfp h3 a:hover { text-decoration: underline; }
+  .badges { margin-bottom: 8px; }
+  .badge { display: inline-block; padding: 2px 8px; border-radius: 4px; font-size: 11px; font-weight: 700; color: white; margin-right: 4px; }
+  .badge-high { background: #059669; }
+  .badge-medium { background: #d97706; }
+  .badge-low { background: #94a3b8; }
+  .badge-source { background: #0066cc; }
+  .badge-type { background: #555; }
+  .badge-score { background: #1e293b; }
+  .meta { color: #666; font-size: 13px; line-height: 1.6; }
+  .meta strong { color: #333; }
+  .keywords { font-size: 12px; color: #059669; margin-top: 6px; }
+  .description { font-size: 13px; color: #555; margin-top: 8px; }
   a { color: #0066cc; }
 </style>
 </head>
 <body>
-<h1>Localizer RFP Digest</h1>
-<p>{{ now }} &mdash; {{ rfps | length }} new opportunity(ies)</p>
+<h1>Localizer Procurement Digest</h1>
+<p>{{ now }} &mdash; {{ scored | length }} opportunit{{ "y" if scored | length == 1 else "ies" }}</p>
 
-{% for rfp in rfps %}
-<div class="rfp">
-  <span class="source">{{ rfp.source | upper }}</span>
-  <span class="source" style="background: #555;">{{ rfp.solicitation_type | default("other") | upper }}</span>
-  <h3>{% if rfp.url %}<a href="{{ rfp.url }}">{{ rfp.title }}</a>{% else %}{{ rfp.title }}{% endif %}</h3>
-  <div class="meta">
-    {% if rfp.due_date %}<span class="due">Due: {{ rfp.due_date }}</span> &bull; {% endif %}
-    {% if rfp.category %}{{ rfp.category }} &bull; {% endif %}
-    {% if rfp.estimated_value %}Est. Value: {{ rfp.estimated_value }}{% endif %}
+{% for item in scored %}
+<div class="rfp {{ item.priority }}">
+  <div class="badges">
+    <span class="badge badge-{{ item.priority }}">{{ item.priority | upper }}</span>
+    <span class="badge badge-score">{{ item.score }}/100</span>
+    <span class="badge badge-source">{{ item.rfp.source | upper }}</span>
+    <span class="badge badge-type">{{ item.rfp.solicitation_type | default("other") | upper }}</span>
   </div>
-  {% if rfp.description %}<p>{{ rfp.description[:300] }}{% if rfp.description|length > 300 %}...{% endif %}</p>{% endif %}
+  <h3>{% if item.rfp.url %}<a href="{{ item.rfp.url }}">{{ item.rfp.title }}</a>{% else %}{{ item.rfp.title }}{% endif %}</h3>
+  <div class="meta">
+    {% if item.rfp.due_date %}<strong>Due:</strong> {{ item.rfp.due_date }} &bull; {% endif %}
+    {% if item.rfp.category %}<strong>Category:</strong> {{ item.rfp.category }} &bull; {% endif %}
+    {% if item.rfp.estimated_value %}<strong>Est. Value:</strong> {{ item.rfp.estimated_value }}{% endif %}
+  </div>
+  {% if item.matched_keywords %}<div class="keywords">Matched: {{ item.matched_keywords | join(", ") }}</div>{% endif %}
+  {% if item.rfp.description %}<div class="description">{{ item.rfp.description[:300] }}{% if item.rfp.description|length > 300 %}...{% endif %}</div>{% endif %}
 </div>
 {% endfor %}
 
@@ -68,23 +91,37 @@ HTML_DIGEST_TEMPLATE = Template("""\
 """)
 
 
-def generate_digest(db: Database, mark_notified: bool = True) -> tuple[str, str, list[dict]]:
+def generate_digest(db: Database, mark_notified: bool = True,
+                    min_priority: str = "low") -> tuple[str, str, list[dict]]:
     """Generate text and HTML digests for unnotified RFPs.
 
-    Returns (text_digest, html_digest, rfps).
+    Args:
+        db: Database instance.
+        mark_notified: Whether to mark RFPs as notified after generating.
+        min_priority: Minimum priority to include (high, medium, low).
+
+    Returns (text_digest, html_digest, raw_rfps).
     """
     rfps = db.get_unnotified_rfps()
     if not rfps:
         return "", "", []
 
-    now = datetime.utcnow().strftime("%Y-%m-%d %H:%M UTC")
-    sources = sorted(set(r["source"] for r in rfps))
+    # Score and filter
+    scored = filter_rfps(rfps, min_priority=min_priority)
+    if not scored:
+        return "", "", []
 
-    ctx = {"rfps": rfps, "now": now, "sources": sources}
+    # Get the raw rfps that made it through filtering (for mark_notified)
+    filtered_rfps = [s.rfp for s in scored]
+
+    now = datetime.utcnow().strftime("%Y-%m-%d %H:%M UTC")
+    sources = sorted(set(r.get("source", "") for r in filtered_rfps))
+
+    ctx = {"scored": scored, "rfps": filtered_rfps, "now": now, "sources": sources}
     text = DIGEST_TEMPLATE.render(**ctx)
     html = HTML_DIGEST_TEMPLATE.render(**ctx)
 
     if mark_notified:
-        db.mark_notified([r["id"] for r in rfps])
+        db.mark_notified([r["id"] for r in filtered_rfps])
 
-    return text, html, rfps
+    return text, html, filtered_rfps

@@ -73,32 +73,48 @@ def scrape(ctx, sources):
 @main.command(name="list")
 @click.option("--source", "-s", help="Filter by source")
 @click.option("--all", "show_all", is_flag=True, help="Show all, not just open")
+@click.option("--priority", "-p", type=click.Choice(["high", "medium", "low", "all"]),
+              default="low", help="Minimum priority (default: low, hides excluded)")
 @click.pass_context
-def list_rfps(ctx, source, show_all):
-    """List open RFPs."""
+def list_rfps(ctx, source, show_all, priority):
+    """List open opportunities, scored and ranked by relevance."""
+    from localizer.scoring import filter_rfps
+
     db = ctx.obj["db"]
     rfps = db.get_open_rfps(source=source) if not show_all else db.search("")
 
     if not rfps:
-        console.print("[yellow]No RFPs found.[/yellow]")
+        console.print("[yellow]No opportunities found.[/yellow]")
         return
 
-    _print_rfp_table(rfps)
+    if priority == "all":
+        from localizer.scoring import score_rfps
+        scored = score_rfps(rfps)
+    else:
+        scored = filter_rfps(rfps, min_priority=priority)
+
+    if not scored:
+        console.print(f"[yellow]No opportunities at '{priority}' priority or above.[/yellow]")
+        return
+
+    _print_scored_table(scored)
 
 
 @main.command()
 @click.argument("query")
 @click.pass_context
 def search(ctx, query):
-    """Search RFPs by keyword."""
+    """Search opportunities by keyword, ranked by relevance."""
+    from localizer.scoring import score_rfps
+
     db = ctx.obj["db"]
     rfps = db.search(query)
 
     if not rfps:
-        console.print(f"[yellow]No RFPs matching '{query}'[/yellow]")
+        console.print(f"[yellow]No opportunities matching '{query}'[/yellow]")
         return
 
-    _print_rfp_table(rfps)
+    _print_scored_table(score_rfps(rfps))
 
 
 @main.command()
@@ -155,20 +171,24 @@ def history(ctx, limit):
 @main.command()
 @click.option("--email", "send_email", is_flag=True, help="Send digest via email")
 @click.option("--no-mark", is_flag=True, help="Don't mark RFPs as notified")
+@click.option("--high-only", is_flag=True, help="Email only high-priority opportunities")
 @click.pass_context
-def digest(ctx, send_email, no_mark):
-    """Show unnotified RFPs as a digest, optionally send via email."""
+def digest(ctx, send_email, no_mark, high_only):
+    """Show unnotified opportunities as a digest, optionally send via email."""
     from localizer.digest import generate_digest
 
     db = ctx.obj["db"]
-    text, html, rfps = generate_digest(db, mark_notified=not no_mark)
+    min_priority = "high" if high_only else "low"
+    text, html, rfps = generate_digest(db, mark_notified=not no_mark,
+                                       min_priority=min_priority)
 
     if not rfps:
         console.print("[yellow]No new solicitations to report.[/yellow]")
         return
 
     console.print(f"[bold green]Digest: {len(rfps)} new opportunity(ies)[/bold green]\n")
-    _print_rfp_table(rfps)
+    from localizer.scoring import score_rfps
+    _print_scored_table(score_rfps(rfps))
 
     if send_email:
         from localizer.email import send_digest_email
@@ -221,18 +241,28 @@ def build(ctx, output):
     console.print(f"[dim]Deploy {out}/ to Netlify, GitHub Pages, or any static host.[/dim]")
 
 
-def _print_rfp_table(rfps: list[dict]):
+def _print_scored_table(scored_rfps):
+    """Print a table of scored RFPs with priority and relevance info."""
     table = Table(show_lines=True)
+    table.add_column("Score", width=5, justify="right")
+    table.add_column("Pri", width=4)
     table.add_column("Source", style="cyan", width=12)
-    table.add_column("Type", width=6)
+    table.add_column("Type", width=5)
     table.add_column("Title", style="bold", max_width=50)
-    table.add_column("Due Date", width=12)
-    table.add_column("Category", width=15)
-    table.add_column("URL", style="dim", max_width=40)
+    table.add_column("Due", width=12)
+    table.add_column("Keywords", style="dim", max_width=30)
 
-    for r in rfps:
+    priority_styles = {
+        "high": "bold green", "medium": "yellow", "low": "dim", "excluded": "red",
+    }
+    type_styles = {
+        "RFP": "bold green", "RFI": "bold blue", "RFQ": "bold magenta",
+        "IFB": "bold yellow", "ITB": "bold yellow",
+    }
+
+    for s in scored_rfps:
+        r = s.rfp
         due = r.get("due_date") or ""
-        # Highlight approaching deadlines
         due_style = ""
         if due:
             try:
@@ -248,18 +278,20 @@ def _print_rfp_table(rfps: list[dict]):
                 pass
 
         sol_type = r.get("solicitation_type") or "other"
-        type_style = {
-            "RFP": "bold green", "RFI": "bold blue", "RFQ": "bold magenta",
-            "IFB": "bold yellow", "ITB": "bold yellow",
-        }.get(sol_type, "dim")
+        ts = type_styles.get(sol_type, "dim")
+        ps = priority_styles.get(s.priority, "dim")
+        kw_text = ", ".join(s.matched_keywords[:3])
+        if len(s.matched_keywords) > 3:
+            kw_text += f" +{len(s.matched_keywords) - 3}"
 
         table.add_row(
+            f"[{ps}]{s.score}[/{ps}]",
+            f"[{ps}]{s.priority[0].upper()}[/{ps}]",
             r.get("source", ""),
-            f"[{type_style}]{sol_type}[/{type_style}]",
+            f"[{ts}]{sol_type}[/{ts}]",
             r.get("title", ""),
             f"[{due_style}]{due}[/{due_style}]" if due_style else due,
-            r.get("category") or "",
-            r.get("url") or "",
+            kw_text,
         )
 
     console.print(table)
