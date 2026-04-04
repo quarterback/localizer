@@ -1,7 +1,7 @@
 """Static HTML dashboard generator.
 
-Reads the SQLite database and generates a static site in an output directory
-that can be deployed to Netlify, GitHub Pages, or any static host.
+Reads the SQLite database, scores every opportunity, and generates a static
+site with priority tiers, clickable links, and content previews.
 """
 
 import json
@@ -10,6 +10,7 @@ from html import escape
 from pathlib import Path
 
 from localizer.db import Database
+from localizer.scoring import score_rfps, ScoredRFP
 
 
 SOURCE_LABELS = {
@@ -28,6 +29,10 @@ TYPE_COLORS = {
     "PSS": "#be185d", "BOA": "#64748b", "IDIQ": "#64748b",
 }
 
+PRIORITY_COLORS = {
+    "high": "#059669", "medium": "#d97706", "low": "#64748b", "excluded": "#dc2626",
+}
+
 
 def generate_site(db: Database, output_dir: Path):
     """Generate a complete static site from the database."""
@@ -39,80 +44,70 @@ def generate_site(db: Database, output_dir: Path):
     new_rfps = db.get_new_rfps(since=since_7d)
     history = db.get_scrape_history(limit=50)
 
-    # Stats
-    sources = {}
-    types = {}
-    for r in all_rfps:
-        src = r["source"]
-        sources[src] = sources.get(src, 0) + 1
-        t = r.get("solicitation_type") or "other"
-        types[t] = types.get(t, 0) + 1
-
+    # Score everything
+    scored = score_rfps(all_rfps)
     new_ids = {r["id"] for r in new_rfps}
 
-    # Build the index page
-    html = _render_page(all_rfps, new_ids, sources, types, history, now)
+    # Count by tier
+    high = [s for s in scored if s.priority == "high"]
+    medium = [s for s in scored if s.priority == "medium"]
+    low = [s for s in scored if s.priority == "low"]
+    excluded = [s for s in scored if s.priority == "excluded"]
+    visible = [s for s in scored if s.priority != "excluded"]
+
+    html = _render_page(scored, new_ids, high, medium, low, excluded, history, now)
     (output_dir / "index.html").write_text(html)
 
-    # Write RFP data as JSON for potential future JS interactivity
-    rfps_json = json.dumps(all_rfps, indent=2, default=str)
-    (output_dir / "data.json").write_text(rfps_json)
+    # JSON export (non-excluded only, with scores)
+    export = []
+    for s in visible:
+        r = dict(s.rfp)
+        r["relevance_score"] = s.score
+        r["priority"] = s.priority
+        r["matched_keywords"] = s.matched_keywords
+        export.append(r)
+    (output_dir / "data.json").write_text(json.dumps(export, indent=2, default=str))
 
-    # Netlify config
     (output_dir / "_redirects").write_text("/* /index.html 200\n")
+    return len(visible)
 
-    return len(all_rfps)
 
-
-def _render_page(rfps, new_ids, sources, types, history, now):
+def _render_page(scored, new_ids, high, medium, low, excluded, history, now):
     now_str = now.strftime("%B %d, %Y at %H:%M UTC")
-    total = len(rfps)
-    new_count = len(new_ids)
+    visible = [s for s in scored if s.priority != "excluded"]
 
-    # Deadline warnings
+    # Build cards for each visible opportunity
+    cards_html = []
+    for s in visible:
+        cards_html.append(_render_card(s, s.rfp["id"] in new_ids, now))
+
+    # Closing soon
     upcoming = []
-    for r in rfps:
-        if r.get("due_date"):
+    for s in visible:
+        due = s.rfp.get("due_date")
+        if due:
             try:
-                due = datetime.fromisoformat(r["due_date"])
-                days = (due - now).days
+                days = (datetime.fromisoformat(due) - now).days
                 if 0 <= days <= 7:
-                    upcoming.append((r, days))
+                    upcoming.append((s, days))
             except ValueError:
                 pass
     upcoming.sort(key=lambda x: x[1])
 
-    rfp_rows = []
-    for r in rfps:
-        is_new = r["id"] in new_ids
-        rfp_rows.append(_render_rfp_row(r, is_new, now))
-
-    source_pills = []
-    for src, count in sorted(sources.items(), key=lambda x: -x[1]):
-        label = SOURCE_LABELS.get(src, src)
-        source_pills.append(
-            f'<span class="pill source-pill" data-source="{e(src)}">'
-            f'{e(label)} <strong>{count}</strong></span>'
-        )
-
-    type_pills = []
-    for t, count in sorted(types.items(), key=lambda x: -x[1]):
-        color = TYPE_COLORS.get(t, "#64748b")
-        type_pills.append(
-            f'<span class="pill type-pill" data-type="{e(t)}" '
-            f'style="background:{color}">{e(t)} <strong>{count}</strong></span>'
-        )
-
     upcoming_html = ""
     if upcoming:
         items = []
-        for r, days in upcoming[:5]:
+        for s, days in upcoming[:5]:
+            r = s.rfp
             label = "TODAY" if days == 0 else f"{days}d"
+            url = r.get("url") or ""
+            title = r.get("title", "")[:60]
+            title_el = f'<a href="{e(url)}" target="_blank">{e(title)}</a>' if url else e(title)
             items.append(
                 f'<div class="deadline-item">'
                 f'<span class="deadline-days {"urgent" if days <= 2 else ""}">{label}</span>'
-                f'<span class="deadline-title">{e(r["title"][:60])}</span>'
-                f'<span class="deadline-source">{e(SOURCE_LABELS.get(r["source"], r["source"]))}</span>'
+                f'<span class="deadline-title">{title_el}</span>'
+                f'<span class="deadline-source">{e(SOURCE_LABELS.get(r.get("source",""), r.get("source","")))}</span>'
                 f'</div>'
             )
         upcoming_html = f'''
@@ -121,6 +116,7 @@ def _render_page(rfps, new_ids, sources, types, history, now):
             {"".join(items)}
         </div>'''
 
+    # History
     history_rows = []
     for h in history[:10]:
         status_cls = "success" if h["status"] == "success" else "error"
@@ -131,13 +127,10 @@ def _render_page(rfps, new_ids, sources, types, history, now):
             except ValueError:
                 pass
         history_rows.append(
-            f'<tr>'
-            f'<td>{e(SOURCE_LABELS.get(h["source"], h["source"]))}</td>'
-            f'<td><span class="status-{status_cls}">{e(h["status"])}</span></td>'
-            f'<td>{h["rfps_found"]}</td>'
-            f'<td>{h["rfps_new"]}</td>'
-            f'<td class="dim">{e(finished)}</td>'
-            f'</tr>'
+            f'<tr><td>{e(SOURCE_LABELS.get(h["source"], h["source"]))}</td>'
+            f'<td class="status-{status_cls}">{e(h["status"])}</td>'
+            f'<td>{h["rfps_found"]}</td><td>{h["rfps_new"]}</td>'
+            f'<td class="dim">{e(finished)}</td></tr>'
         )
 
     return f'''<!DOCTYPE html>
@@ -145,21 +138,22 @@ def _render_page(rfps, new_ids, sources, types, history, now):
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Localizer &mdash; Portland Procurement Monitor</title>
+<title>Localizer — Portland Procurement Monitor</title>
 <style>
 :root {{
     --bg: #0f172a; --surface: #1e293b; --surface2: #334155;
     --text: #e2e8f0; --text-dim: #94a3b8; --accent: #38bdf8;
-    --green: #34d399; --red: #f87171; --yellow: #fbbf24;
+    --green: #34d399; --red: #f87171; --yellow: #fbbf24; --orange: #fb923c;
     --border: #475569;
 }}
 * {{ margin: 0; padding: 0; box-sizing: border-box; }}
 body {{
     font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif;
-    background: var(--bg); color: var(--text);
-    line-height: 1.5; padding: 0;
+    background: var(--bg); color: var(--text); line-height: 1.5;
 }}
-.container {{ max-width: 1200px; margin: 0 auto; padding: 20px; }}
+a {{ color: var(--accent); text-decoration: none; }}
+a:hover {{ text-decoration: underline; }}
+.container {{ max-width: 1000px; margin: 0 auto; padding: 20px; }}
 header {{
     background: var(--surface); border-bottom: 1px solid var(--border);
     padding: 20px 0; margin-bottom: 24px;
@@ -168,94 +162,100 @@ header .container {{ display: flex; justify-content: space-between; align-items:
 h1 {{ font-size: 1.5rem; font-weight: 700; }}
 h1 span {{ color: var(--accent); }}
 .updated {{ color: var(--text-dim); font-size: 0.85rem; }}
-.stats {{ display: flex; gap: 16px; flex-wrap: wrap; margin-bottom: 20px; }}
-.stat {{
-    background: var(--surface); border-radius: 8px; padding: 16px 20px;
-    flex: 1; min-width: 140px;
-}}
-.stat-value {{ font-size: 2rem; font-weight: 700; color: var(--accent); }}
-.stat-label {{ color: var(--text-dim); font-size: 0.85rem; }}
+
+/* Stats */
+.stats {{ display: flex; gap: 12px; flex-wrap: wrap; margin-bottom: 20px; }}
+.stat {{ background: var(--surface); border-radius: 8px; padding: 14px 18px; flex: 1; min-width: 120px; }}
+.stat-value {{ font-size: 1.8rem; font-weight: 700; }}
+.stat-label {{ color: var(--text-dim); font-size: 0.8rem; }}
+
+/* Filters */
 .filters {{
-    display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 20px; align-items: center;
+    display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 16px; align-items: center;
 }}
 .search-box {{
     background: var(--surface); border: 1px solid var(--border); color: var(--text);
-    padding: 8px 14px; border-radius: 6px; font-size: 0.9rem; width: 260px;
+    padding: 8px 14px; border-radius: 6px; font-size: 0.9rem; width: 280px;
 }}
 .search-box::placeholder {{ color: var(--text-dim); }}
 .pill {{
     display: inline-block; padding: 4px 12px; border-radius: 20px;
     font-size: 0.8rem; cursor: pointer; color: white;
-    background: var(--surface2); transition: opacity 0.15s;
-    user-select: none;
+    background: var(--surface2); transition: all 0.15s; user-select: none; border: none;
 }}
 .pill:hover {{ opacity: 0.85; }}
 .pill.active {{ box-shadow: 0 0 0 2px var(--accent); }}
 .pill strong {{ margin-left: 4px; }}
-.source-pill {{ background: var(--surface2); }}
-.card {{
-    background: var(--surface); border-radius: 8px; padding: 20px;
-    margin-bottom: 20px; border: 1px solid var(--border);
-}}
-.card h2 {{ font-size: 1.1rem; margin-bottom: 12px; color: var(--text-dim); }}
+#rfp-count {{ color: var(--text-dim); font-size: 0.85rem; margin-bottom: 12px; }}
+
+/* Deadline card */
+.card {{ background: var(--surface); border-radius: 8px; padding: 20px; margin-bottom: 20px; border: 1px solid var(--border); }}
+.card h2 {{ font-size: 1rem; margin-bottom: 10px; color: var(--text-dim); }}
 .deadline-card {{ border-left: 3px solid var(--yellow); }}
-.deadline-item {{
-    display: flex; align-items: center; gap: 12px; padding: 6px 0;
-    border-bottom: 1px solid var(--border);
-}}
+.deadline-item {{ display: flex; align-items: center; gap: 12px; padding: 6px 0; border-bottom: 1px solid var(--border); }}
 .deadline-item:last-child {{ border-bottom: none; }}
-.deadline-days {{
-    background: var(--yellow); color: #000; font-weight: 700; font-size: 0.8rem;
-    padding: 2px 8px; border-radius: 4px; min-width: 48px; text-align: center;
-}}
+.deadline-days {{ background: var(--yellow); color: #000; font-weight: 700; font-size: 0.8rem; padding: 2px 8px; border-radius: 4px; min-width: 48px; text-align: center; }}
 .deadline-days.urgent {{ background: var(--red); color: white; }}
-.deadline-title {{ flex: 1; font-weight: 500; }}
+.deadline-title {{ flex: 1; }}
 .deadline-source {{ color: var(--text-dim); font-size: 0.85rem; }}
-table {{ width: 100%; border-collapse: collapse; }}
-th {{
-    text-align: left; padding: 10px 12px; font-size: 0.8rem; font-weight: 600;
-    color: var(--text-dim); text-transform: uppercase; letter-spacing: 0.05em;
-    border-bottom: 2px solid var(--border); position: sticky; top: 0;
-    background: var(--surface); cursor: pointer;
+
+/* Opportunity cards */
+.opp-card {{
+    background: var(--surface); border: 1px solid var(--border); border-radius: 8px;
+    padding: 16px 20px; margin-bottom: 12px; transition: border-color 0.15s;
+    border-left: 4px solid var(--border);
 }}
-th:hover {{ color: var(--accent); }}
-td {{ padding: 10px 12px; border-bottom: 1px solid var(--border); font-size: 0.9rem; vertical-align: top; }}
-tr.rfp-row:hover {{ background: var(--surface2); }}
-tr.rfp-row.is-new {{ border-left: 3px solid var(--green); }}
-.rfp-title {{ font-weight: 500; }}
-.rfp-title a {{ color: var(--accent); text-decoration: none; }}
-.rfp-title a:hover {{ text-decoration: underline; }}
-.type-badge {{
+.opp-card:hover {{ border-color: var(--accent); }}
+.opp-card.priority-high {{ border-left-color: var(--green); }}
+.opp-card.priority-medium {{ border-left-color: var(--orange); }}
+.opp-card.priority-low {{ border-left-color: var(--surface2); }}
+.opp-card.is-new {{ background: #1a2e1a; }}
+.opp-header {{ display: flex; justify-content: space-between; align-items: flex-start; gap: 12px; margin-bottom: 6px; }}
+.opp-title {{ font-size: 1rem; font-weight: 600; flex: 1; }}
+.opp-title a {{ color: var(--text); }}
+.opp-title a:hover {{ color: var(--accent); }}
+.opp-score {{
+    font-size: 0.8rem; font-weight: 700; padding: 2px 8px; border-radius: 4px;
+    white-space: nowrap; flex-shrink: 0;
+}}
+.score-high {{ background: #065f46; color: var(--green); }}
+.score-medium {{ background: #78350f; color: var(--orange); }}
+.score-low {{ background: var(--surface2); color: var(--text-dim); }}
+.opp-badges {{ display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 8px; }}
+.badge {{
     display: inline-block; padding: 2px 8px; border-radius: 4px;
-    font-size: 0.75rem; font-weight: 700; color: white;
+    font-size: 0.7rem; font-weight: 700; color: white;
 }}
-.new-badge {{
-    display: inline-block; background: var(--green); color: #000;
-    padding: 1px 6px; border-radius: 3px; font-size: 0.7rem; font-weight: 700;
-    margin-left: 6px;
+.badge-new {{ background: var(--green); color: #000; }}
+.opp-meta {{ color: var(--text-dim); font-size: 0.85rem; margin-bottom: 4px; }}
+.opp-meta strong {{ color: var(--text); }}
+.opp-description {{ color: var(--text-dim); font-size: 0.85rem; margin-top: 6px; line-height: 1.4; }}
+.opp-keywords {{ font-size: 0.8rem; color: var(--green); margin-top: 6px; }}
+.opp-link {{
+    display: inline-block; margin-top: 8px; padding: 6px 14px; background: var(--accent);
+    color: #0f172a; border-radius: 6px; font-size: 0.85rem; font-weight: 600;
+    text-decoration: none;
 }}
-.due-date {{ white-space: nowrap; }}
-.due-date.overdue {{ color: var(--red); text-decoration: line-through; }}
-.due-date.soon {{ color: var(--red); font-weight: 700; }}
-.due-date.upcoming {{ color: var(--yellow); }}
+.opp-link:hover {{ opacity: 0.9; text-decoration: none; }}
+
+/* Misc */
 .dim {{ color: var(--text-dim); }}
 .status-success {{ color: var(--green); }}
 .status-error {{ color: var(--red); }}
 .history-table {{ margin-top: 24px; }}
-.history-table table {{ font-size: 0.85rem; }}
-.empty-state {{
-    text-align: center; padding: 60px 20px; color: var(--text-dim);
-}}
-.empty-state h2 {{ font-size: 1.3rem; margin-bottom: 8px; }}
-#rfp-count {{ color: var(--text-dim); font-size: 0.85rem; margin-bottom: 8px; }}
+.history-table table {{ width: 100%; border-collapse: collapse; font-size: 0.85rem; }}
+.history-table th, .history-table td {{ padding: 8px 12px; border-bottom: 1px solid var(--border); text-align: left; }}
+.history-table th {{ color: var(--text-dim); font-size: 0.75rem; text-transform: uppercase; }}
+.empty-state {{ text-align: center; padding: 60px 20px; color: var(--text-dim); }}
+.excluded-count {{ color: var(--text-dim); font-size: 0.85rem; margin-bottom: 20px; }}
 @media (max-width: 768px) {{
     .container {{ padding: 12px; }}
     .stats {{ gap: 8px; }}
-    .stat {{ min-width: 100px; padding: 12px; }}
-    .stat-value {{ font-size: 1.5rem; }}
+    .stat {{ min-width: 80px; padding: 10px; }}
+    .stat-value {{ font-size: 1.3rem; }}
     .search-box {{ width: 100%; }}
-    th, td {{ padding: 8px 6px; font-size: 0.8rem; }}
-    .hide-mobile {{ display: none; }}
+    .opp-header {{ flex-direction: column; gap: 4px; }}
+    .opp-link {{ display: block; text-align: center; }}
 }}
 </style>
 </head>
@@ -266,24 +266,23 @@ tr.rfp-row.is-new {{ border-left: 3px solid var(--green); }}
         <div class="updated">Updated {e(now_str)}</div>
     </div>
 </header>
-
 <div class="container">
     <div class="stats">
         <div class="stat">
-            <div class="stat-value">{total}</div>
-            <div class="stat-label">Open Opportunities</div>
+            <div class="stat-value" style="color: var(--green)">{len(high)}</div>
+            <div class="stat-label">High Priority</div>
         </div>
         <div class="stat">
-            <div class="stat-value" style="color: var(--green)">{new_count}</div>
-            <div class="stat-label">New This Week</div>
+            <div class="stat-value" style="color: var(--orange)">{len(medium)}</div>
+            <div class="stat-label">Medium Priority</div>
+        </div>
+        <div class="stat">
+            <div class="stat-value">{len(low)}</div>
+            <div class="stat-label">Low Priority</div>
         </div>
         <div class="stat">
             <div class="stat-value" style="color: var(--yellow)">{len(upcoming)}</div>
-            <div class="stat-label">Closing Within 7 Days</div>
-        </div>
-        <div class="stat">
-            <div class="stat-value">{len(sources)}</div>
-            <div class="stat-label">Sources Active</div>
+            <div class="stat-label">Closing This Week</div>
         </div>
     </div>
 
@@ -291,28 +290,17 @@ tr.rfp-row.is-new {{ border-left: 3px solid var(--green); }}
 
     <div class="filters">
         <input type="text" class="search-box" id="search" placeholder="Search opportunities...">
-        {" ".join(source_pills)}
-        {" ".join(type_pills)}
+        <button class="pill priority-pill active" data-priority="high" style="background: #065f46; color: var(--green)">High <strong>{len(high)}</strong></button>
+        <button class="pill priority-pill active" data-priority="medium" style="background: #78350f; color: var(--orange)">Med <strong>{len(medium)}</strong></button>
+        <button class="pill priority-pill" data-priority="low" style="background: var(--surface2)">Low <strong>{len(low)}</strong></button>
     </div>
-
     <div id="rfp-count"></div>
 
-    <div class="card" style="padding: 0; overflow-x: auto;">
-        <table id="rfp-table">
-            <thead>
-                <tr>
-                    <th data-sort="source">Source</th>
-                    <th data-sort="type">Type</th>
-                    <th data-sort="title">Title</th>
-                    <th data-sort="due" class="hide-mobile">Due Date</th>
-                    <th data-sort="seen" class="hide-mobile">Found</th>
-                </tr>
-            </thead>
-            <tbody>
-                {"".join(rfp_rows) if rfp_rows else '<tr><td colspan="5" class="empty-state"><h2>No opportunities yet</h2><p>Scraper has not run yet. Trigger a manual run in GitHub Actions.</p></td></tr>'}
-            </tbody>
-        </table>
+    <div id="cards-container">
+        {"".join(cards_html) if cards_html else '<div class="empty-state"><h2>No opportunities yet</h2><p>Scraper has not run yet. Trigger a manual run in GitHub Actions.</p></div>'}
     </div>
+
+    <div class="excluded-count">{len(excluded)} excluded (construction, janitorial, IFB/ITB, etc.)</div>
 
     <details class="history-table">
         <summary style="cursor:pointer; color: var(--text-dim); margin-bottom: 12px;">Scrape History</summary>
@@ -324,128 +312,152 @@ tr.rfp-row.is-new {{ border-left: 3px solid var(--green); }}
         </div>
     </details>
 </div>
-
 <script>
-const rows = document.querySelectorAll('.rfp-row');
+const cards = document.querySelectorAll('.opp-card');
 const search = document.getElementById('search');
 const countEl = document.getElementById('rfp-count');
-let activeSource = null, activeType = null;
+let activePriorities = new Set(['high', 'medium']);
 
 function updateCount() {{
-    const visible = document.querySelectorAll('.rfp-row:not([style*="display: none"])').length;
-    countEl.textContent = `Showing ${{visible}} of ${{rows.length}} opportunities`;
+    const visible = document.querySelectorAll('.opp-card:not([style*="display: none"])').length;
+    countEl.textContent = `Showing ${{visible}} of ${{cards.length}} opportunities`;
 }}
 
-function filterRows() {{
+function filterCards() {{
     const q = search.value.toLowerCase();
-    rows.forEach(row => {{
-        const text = row.textContent.toLowerCase();
-        const src = row.dataset.source;
-        const type = row.dataset.type;
+    cards.forEach(card => {{
+        const text = card.textContent.toLowerCase();
+        const pri = card.dataset.priority;
         const matchSearch = !q || text.includes(q);
-        const matchSource = !activeSource || src === activeSource;
-        const matchType = !activeType || type === activeType;
-        row.style.display = (matchSearch && matchSource && matchType) ? '' : 'none';
+        const matchPriority = activePriorities.size === 0 || activePriorities.has(pri);
+        card.style.display = (matchSearch && matchPriority) ? '' : 'none';
     }});
     updateCount();
 }}
 
-search.addEventListener('input', filterRows);
+search.addEventListener('input', filterCards);
 
-document.querySelectorAll('.source-pill').forEach(pill => {{
+document.querySelectorAll('.priority-pill').forEach(pill => {{
     pill.addEventListener('click', () => {{
-        const src = pill.dataset.source;
-        if (activeSource === src) {{ activeSource = null; pill.classList.remove('active'); }}
-        else {{
-            document.querySelectorAll('.source-pill').forEach(p => p.classList.remove('active'));
-            activeSource = src; pill.classList.add('active');
+        const pri = pill.dataset.priority;
+        if (activePriorities.has(pri)) {{
+            activePriorities.delete(pri);
+            pill.classList.remove('active');
+        }} else {{
+            activePriorities.add(pri);
+            pill.classList.add('active');
         }}
-        filterRows();
-    }});
-}});
-
-document.querySelectorAll('.type-pill').forEach(pill => {{
-    pill.addEventListener('click', () => {{
-        const t = pill.dataset.type;
-        if (activeType === t) {{ activeType = null; pill.classList.remove('active'); }}
-        else {{
-            document.querySelectorAll('.type-pill').forEach(p => p.classList.remove('active'));
-            activeType = t; pill.classList.add('active');
-        }}
-        filterRows();
-    }});
-}});
-
-// Column sorting
-document.querySelectorAll('th[data-sort]').forEach(th => {{
-    th.addEventListener('click', () => {{
-        const key = th.dataset.sort;
-        const tbody = document.querySelector('#rfp-table tbody');
-        const arr = Array.from(rows);
-        const dir = th.classList.contains('sort-asc') ? -1 : 1;
-        document.querySelectorAll('th').forEach(t => t.classList.remove('sort-asc', 'sort-desc'));
-        th.classList.add(dir === 1 ? 'sort-asc' : 'sort-desc');
-        arr.sort((a, b) => {{
-            const av = (a.dataset[key] || '').toLowerCase();
-            const bv = (b.dataset[key] || '').toLowerCase();
-            return av < bv ? -dir : av > bv ? dir : 0;
-        }});
-        arr.forEach(r => tbody.appendChild(r));
+        filterCards();
     }});
 }});
 
 updateCount();
+// Start with high+medium visible
+filterCards();
 </script>
 </body>
 </html>'''
 
 
-def _render_rfp_row(r, is_new, now):
+def _render_card(s: ScoredRFP, is_new: bool, now: datetime) -> str:
+    r = s.rfp
     source = r.get("source", "")
     title = r.get("title", "")
-    url = r.get("url", "")
+    url = r.get("url") or ""
     sol_type = r.get("solicitation_type") or "other"
     due = r.get("due_date") or ""
+    desc = r.get("description") or ""
+    category = r.get("category") or ""
+    value = r.get("estimated_value") or ""
     first_seen = r.get("first_seen") or ""
 
+    source_label = SOURCE_LABELS.get(source, source)
     type_color = TYPE_COLORS.get(sol_type, "#64748b")
 
-    title_html = f'<a href="{e(url)}" target="_blank" rel="noopener">{e(title)}</a>' if url else e(title)
-    new_html = '<span class="new-badge">NEW</span>' if is_new else ""
+    # Title with link
+    if url:
+        title_html = f'<a href="{e(url)}" target="_blank" rel="noopener">{e(title)}</a>'
+    else:
+        title_html = e(title)
 
-    due_cls = ""
+    # Score styling
+    score_cls = f"score-{s.priority}"
+
+    # Badges
+    badges = []
+    if is_new:
+        badges.append('<span class="badge badge-new">NEW</span>')
+    badges.append(f'<span class="badge" style="background:{e(type_color)}">{e(sol_type)}</span>')
+    badges.append(f'<span class="badge" style="background:#0066cc">{e(source_label)}</span>')
+
+    # Due date
+    due_html = ""
     if due:
+        due_display = due
         try:
             due_dt = datetime.fromisoformat(due)
             days = (due_dt - now).days
             if days < 0:
-                due_cls = "overdue"
+                due_display = f"{due} (closed)"
+            elif days == 0:
+                due_display = f"{due} (TODAY)"
             elif days <= 7:
-                due_cls = "soon"
-            elif days <= 14:
-                due_cls = "upcoming"
+                due_display = f"{due} ({days} days left)"
         except ValueError:
             pass
+        due_html = f'<strong>Due:</strong> {e(due_display)}'
 
-    seen_short = ""
+    # Meta line
+    meta_parts = []
+    if due_html:
+        meta_parts.append(due_html)
+    if category:
+        meta_parts.append(f"<strong>Category:</strong> {e(category)}")
+    if value:
+        meta_parts.append(f"<strong>Value:</strong> {e(value)}")
     if first_seen:
         try:
-            seen_short = datetime.fromisoformat(first_seen).strftime("%m/%d")
+            seen = datetime.fromisoformat(first_seen).strftime("%b %d")
+            meta_parts.append(f"Found {e(seen)}")
         except ValueError:
             pass
+    meta_html = " &bull; ".join(meta_parts) if meta_parts else ""
 
-    source_label = SOURCE_LABELS.get(source, source)
+    # Description preview
+    desc_html = ""
+    if desc:
+        preview = desc[:250]
+        if len(desc) > 250:
+            preview += "..."
+        desc_html = f'<div class="opp-description">{e(preview)}</div>'
+
+    # Keywords
+    kw_html = ""
+    if s.matched_keywords:
+        kw_html = f'<div class="opp-keywords">Matched: {e(", ".join(s.matched_keywords))}</div>'
+
+    # Link button
+    link_html = ""
+    if url:
+        link_html = f'<a href="{e(url)}" target="_blank" rel="noopener" class="opp-link">View Solicitation &rarr;</a>'
+
+    new_cls = "is-new" if is_new else ""
+    badges_html = "".join(badges)
+    meta_div = f'<div class="opp-meta">{meta_html}</div>' if meta_html else ""
 
     return (
-        f'<tr class="rfp-row {"is-new" if is_new else ""}" '
-        f'data-source="{e(source)}" data-type="{e(sol_type)}" '
-        f'data-title="{e(title.lower())}" data-due="{e(due)}" data-seen="{e(first_seen)}">'
-        f'<td>{e(source_label)}</td>'
-        f'<td><span class="type-badge" style="background:{type_color}">{e(sol_type)}</span></td>'
-        f'<td class="rfp-title">{title_html}{new_html}</td>'
-        f'<td class="due-date {due_cls} hide-mobile">{e(due)}</td>'
-        f'<td class="dim hide-mobile">{e(seen_short)}</td>'
-        f'</tr>'
+        f'<div class="opp-card priority-{s.priority} {new_cls}" '
+        f'data-priority="{e(s.priority)}" data-source="{e(source)}" data-score="{s.score}">'
+        f'<div class="opp-header">'
+        f'<div class="opp-title">{title_html}</div>'
+        f'<span class="opp-score {score_cls}">{s.score}/100</span>'
+        f'</div>'
+        f'<div class="opp-badges">{badges_html}</div>'
+        f'{meta_div}'
+        f'{desc_html}'
+        f'{kw_html}'
+        f'{link_html}'
+        f'</div>'
     )
 
 
